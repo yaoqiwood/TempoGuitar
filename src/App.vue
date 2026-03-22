@@ -2,15 +2,36 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import SplashIntro from "./components/SplashIntro.vue";
 
+type NoteSubdivisionOption = {
+  id: string;
+  symbol: string;
+  label: string;
+};
+
 const bpm = ref(96);
 const isPlaying = ref(false);
 const currentBeat = ref<number | null>(null);
 const beatsPerMeasure = 4;
 
 const timeSignature = ref("4/4");
-const subdivision = ref("四分音符");
 const soundPack = ref("Studio Click");
 const accentPattern = ref("强-弱-弱-弱");
+const subdivisionMenuOpen = ref(false);
+
+const subdivisionOptions: NoteSubdivisionOption[] = [
+  { id: "quarter", symbol: "♩", label: "4分音符" },
+  { id: "eighth", symbol: "♪ ♪", label: "8分音符" },
+  { id: "eighth-triplet", symbol: "♪ ♪ ♪", label: "8分音 3连音" },
+  {
+    id: "eighth-triplet-rest",
+    symbol: "♪ · ♪",
+    label: "8分音符 3连音中间空一拍",
+  },
+  { id: "sixteenth", symbol: "♬", label: "16分音符" },
+  { id: "sixteenth-rest", symbol: "♬ · ·", label: "16分音符中间空两拍" },
+];
+
+const selectedSubdivisionId = ref(subdivisionOptions[0].id);
 
 const showSplash = ref(true);
 
@@ -25,6 +46,17 @@ const beatDots = computed(() =>
     id: index,
     active: index === currentBeat.value,
   })),
+);
+
+const selectedSubdivision = computed(
+  () =>
+    subdivisionOptions.find(
+      (option) => option.id === selectedSubdivisionId.value,
+    ) ?? subdivisionOptions[0],
+);
+
+const subdivisionDisplay = computed(
+  () => `${selectedSubdivision.value.symbol} ${selectedSubdivision.value.label}`,
 );
 
 let splashHideTimer: ReturnType<typeof setTimeout> | undefined;
@@ -42,6 +74,16 @@ function ensureAudioContext() {
   }
 
   return audioContext;
+}
+
+async function warmupAudioContext() {
+  const context = ensureAudioContext();
+
+  if (context.state === "suspended") {
+    await context.resume();
+  }
+
+  return context;
 }
 
 function advanceBeat() {
@@ -95,19 +137,14 @@ function scheduleBeat() {
 }
 
 async function startMetronome() {
-  const context = ensureAudioContext();
-
-  if (context.state === "suspended") {
-    await context.resume();
-  }
+  const context = await warmupAudioContext();
 
   currentBeatIndex = 0;
   currentBeat.value = 0;
-  const startTime = context.currentTime + 0.01;
   isPlaying.value = true;
 
+  const startTime = context.currentTime;
   playClick(0, startTime);
-  scheduleVisualBeat(0, startTime);
   advanceBeat();
   nextNoteTime = startTime + 60 / bpm.value;
 
@@ -143,6 +180,15 @@ function applyPreset(nextBpm: number) {
   bpm.value = nextBpm;
 }
 
+function toggleSubdivisionMenu() {
+  subdivisionMenuOpen.value = !subdivisionMenuOpen.value;
+}
+
+function selectSubdivision(optionId: string) {
+  selectedSubdivisionId.value = optionId;
+  subdivisionMenuOpen.value = false;
+}
+
 watch(bpm, () => {
   if (isPlaying.value && audioContext) {
     nextNoteTime = audioContext.currentTime + 0.06;
@@ -150,6 +196,10 @@ watch(bpm, () => {
 });
 
 onMounted(() => {
+  void warmupAudioContext().catch(() => {
+    // Some runtimes still require a user gesture before audio can fully start.
+  });
+
   splashHideTimer = window.setTimeout(() => {
     showSplash.value = false;
   }, 2400);
@@ -177,7 +227,7 @@ onBeforeUnmount(() => {
         <div class="meter-display">
           <div class="display-top">
             <span class="tag">{{ timeSignature }}</span>
-            <span class="tag">{{ subdivision }}</span>
+            <span class="tag">{{ selectedSubdivision.symbol }}</span>
             <span class="tag">{{ soundPack }}</span>
           </div>
 
@@ -202,7 +252,12 @@ onBeforeUnmount(() => {
             ></span>
           </div>
 
-          <button class="transport" type="button" @click="togglePlayback">
+          <button
+            class="transport"
+            type="button"
+            @pointerdown="void warmupAudioContext()"
+            @click="togglePlayback"
+          >
             {{ isPlaying ? "暂停" : "开始" }}
           </button>
         </div>
@@ -221,9 +276,18 @@ onBeforeUnmount(() => {
                 <span class="setting-label">拍号</span>
                 <strong>{{ timeSignature }}</strong>
               </div>
-              <div class="setting-card">
-                <span class="setting-label">细分</span>
-                <strong>{{ subdivision }}</strong>
+              <div class="setting-card note-setting-card">
+                <span class="setting-label">音符</span>
+                <button
+                  class="note-select-trigger"
+                  type="button"
+                  @click="toggleSubdivisionMenu"
+                >
+                  <strong>{{ subdivisionDisplay }}</strong>
+                  <span class="note-select-caret">{{
+                    subdivisionMenuOpen ? "▲" : "▼"
+                  }}</span>
+                </button>
               </div>
               <div class="setting-card">
                 <span class="setting-label">音色</span>
@@ -260,6 +324,54 @@ onBeforeUnmount(() => {
       </section>
     </Transition>
   </main>
+
+  <Transition name="sheet-fade">
+    <div
+      v-if="subdivisionMenuOpen"
+      class="note-sheet-overlay"
+      @click.self="subdivisionMenuOpen = false"
+    >
+      <Transition name="note-sheet">
+        <section v-if="subdivisionMenuOpen" class="note-sheet-panel">
+          <div class="note-sheet-header">
+            <div>
+              <span class="note-sheet-eyebrow">音符选择</span>
+              <h3>选择节奏音符</h3>
+            </div>
+            <button
+              class="note-sheet-close"
+              type="button"
+              @click="subdivisionMenuOpen = false"
+            >
+              关闭
+            </button>
+          </div>
+
+          <div class="note-sheet-current">
+            当前：{{ subdivisionDisplay }}
+          </div>
+
+          <div class="note-select-popup">
+            <button
+              v-for="option in subdivisionOptions"
+              :key="option.id"
+              :class="[
+                'note-option',
+                {
+                  active: option.id === selectedSubdivisionId,
+                },
+              ]"
+              type="button"
+              @click="selectSubdivision(option.id)"
+            >
+              <span class="note-option-symbol">{{ option.symbol }}</span>
+              <span class="note-option-label">{{ option.label }}</span>
+            </button>
+          </div>
+        </section>
+      </Transition>
+    </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -493,9 +605,147 @@ onBeforeUnmount(() => {
   gap: 4px;
 }
 
+.note-setting-card {
+  position: relative;
+}
+
 .setting-label {
   color: rgba(246, 237, 216, 0.56);
   font-size: 0.8rem;
+}
+
+.note-select-trigger {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+}
+
+.note-select-trigger strong {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.97rem;
+  line-height: 1.45;
+}
+
+.note-select-caret {
+  color: rgba(246, 237, 216, 0.58);
+  font-size: 0.76rem;
+}
+
+.note-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 6, 5, 0.58);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 80;
+}
+
+.note-sheet-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: min(50vh, 480px);
+  padding: 20px 20px 24px;
+  border-radius: 28px 28px 0 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(31, 26, 20, 0.98), rgba(16, 13, 11, 0.99));
+  box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.32);
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 14px;
+}
+
+.note-sheet-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.note-sheet-eyebrow {
+  display: inline-block;
+  margin-bottom: 6px;
+  color: rgba(246, 237, 216, 0.5);
+  font-size: 0.74rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.note-sheet-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.note-sheet-close {
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f6edd8;
+}
+
+.note-sheet-current {
+  color: rgba(246, 237, 216, 0.72);
+  font-size: 0.92rem;
+}
+
+.note-select-popup {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.note-option {
+  padding: 12px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #f6edd8;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  text-align: left;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.note-option:hover {
+  transform: translateY(-1px);
+  border-color: rgba(223, 172, 83, 0.34);
+  background: rgba(223, 172, 83, 0.08);
+}
+
+.note-option.active {
+  border-color: rgba(223, 172, 83, 0.58);
+  background: rgba(223, 172, 83, 0.14);
+}
+
+.note-option-symbol {
+  color: #dfac53;
+  font-size: 1.2rem;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
+.note-option-label {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: rgba(246, 237, 216, 0.86);
 }
 
 .preset-list {
@@ -527,6 +777,42 @@ onBeforeUnmount(() => {
 .screen-fade-leave-to {
   opacity: 0;
   transform: translateY(20px);
+}
+
+.note-menu-enter-active,
+.note-menu-leave-active {
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.note-menu-enter-from,
+.note-menu-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.sheet-fade-enter-active,
+.sheet-fade-leave-active {
+  transition: opacity 180ms ease;
+}
+
+.sheet-fade-enter-from,
+.sheet-fade-leave-to {
+  opacity: 0;
+}
+
+.note-sheet-enter-active,
+.note-sheet-leave-active {
+  transition:
+    opacity 220ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.note-sheet-enter-from,
+.note-sheet-leave-to {
+  opacity: 0;
+  transform: translateY(28px);
 }
 
 @keyframes home-enter {
@@ -582,6 +868,16 @@ onBeforeUnmount(() => {
 
   .setting-grid {
     grid-template-columns: 1fr;
+  }
+
+  .note-select-popup {
+    grid-template-columns: 1fr;
+  }
+
+  .note-sheet-panel {
+    height: min(58vh, 560px);
+    padding: 18px 16px 22px;
+    border-radius: 24px 24px 0 0;
   }
 }
 </style>
