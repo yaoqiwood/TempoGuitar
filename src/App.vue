@@ -69,7 +69,10 @@ function playClick(beat: number, time: number) {
   oscillator.frequency.setValueAtTime(isAccent ? 1360 : 920, time);
 
   gainNode.gain.setValueAtTime(0.0001, time);
-  gainNode.gain.exponentialRampToValueAtTime(isAccent ? 0.28 : 0.18, time + 0.004);
+  gainNode.gain.exponentialRampToValueAtTime(
+    isAccent ? 0.28 : 0.18,
+    time + 0.004,
+  );
   gainNode.gain.exponentialRampToValueAtTime(0.0001, time + 0.08);
 
   oscillator.connect(gainNode);
@@ -80,7 +83,10 @@ function playClick(beat: number, time: number) {
 }
 
 function scheduleBeat() {
-  while (audioContext && nextNoteTime < audioContext.currentTime + scheduleAheadTime) {
+  while (
+    audioContext &&
+    nextNoteTime < audioContext.currentTime + scheduleAheadTime
+  ) {
     const beat = currentBeatIndex;
     playClick(beat, nextNoteTime);
     scheduleVisualBeat(beat, nextNoteTime);
@@ -97,8 +103,13 @@ async function startMetronome() {
 
   currentBeatIndex = 0;
   currentBeat.value = 0;
-  nextNoteTime = context.currentTime + 0.06;
+  const startTime = context.currentTime + 0.01;
   isPlaying.value = true;
+
+  playClick(0, startTime);
+  scheduleVisualBeat(0, startTime);
+  advanceBeat();
+  nextNoteTime = startTime + 60 / bpm.value;
 
   scheduleBeat();
   schedulerTimer = window.setInterval(scheduleBeat, lookahead);
@@ -171,12 +182,16 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="bpm-block">
-            <button class="stepper" type="button" @click="nudgeBpm(-1)">-</button>
+            <button class="stepper" type="button" @click="nudgeBpm(-1)">
+              -
+            </button>
             <div class="bpm-value">
               <span class="bpm-number">{{ bpm }}</span>
               <span class="bpm-unit">BPM</span>
             </div>
-            <button class="stepper" type="button" @click="nudgeBpm(1)">+</button>
+            <button class="stepper" type="button" @click="nudgeBpm(1)">
+              +
+            </button>
           </div>
 
           <div class="beat-row">
@@ -196,7 +211,9 @@ onBeforeUnmount(() => {
           <div class="panel-section">
             <div class="section-header">
               <h2>当前设置</h2>
-              <span class="section-badge">{{ isPlaying ? "运行中" : "待机" }}</span>
+              <span class="section-badge">{{
+                isPlaying ? "运行中" : "待机"
+              }}</span>
             </div>
 
             <div class="setting-grid">
@@ -250,8 +267,16 @@ onBeforeUnmount(() => {
   font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
   color: #f6edd8;
   background:
-    radial-gradient(circle at top left, rgba(198, 154, 75, 0.2), transparent 28%),
-    radial-gradient(circle at top right, rgba(65, 95, 84, 0.18), transparent 24%),
+    radial-gradient(
+      circle at top left,
+      rgba(198, 154, 75, 0.2),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at top right,
+      rgba(65, 95, 84, 0.18),
+      transparent 24%
+    ),
     linear-gradient(180deg, #171411 0%, #0f0d0b 100%);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -266,11 +291,20 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 :global(button),
 :global(input) {
   font: inherit;
+}
+
+:global(button),
+:global([role="button"]),
+:global(a),
+:global(label[for]) {
+  cursor: pointer;
 }
 
 :global(#app) {
