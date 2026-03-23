@@ -357,30 +357,36 @@ onBeforeUnmount(() => {
             </span>
           </div>
 
-          <div
-            :class="['meter-focus-frame', { 'is-pulsing': glowPulseActive }]"
-            :style="stageGlowStyle"
-          >
-            <div class="bpm-block">
-              <button class="stepper" type="button" @click="nudgeBpm(-1)">
-                -
-              </button>
+          <div class="bpm-block">
+            <button class="stepper" type="button" @click="nudgeBpm(-1)">
+              -
+            </button>
+            <div
+              :class="[
+                'meter-focus-frame',
+                {
+                  'is-active': isPlaying,
+                  'is-pulsing': glowPulseActive,
+                },
+              ]"
+              :style="stageGlowStyle"
+            >
               <div class="bpm-value">
                 <span class="bpm-number">{{ bpm }}</span>
                 <span class="bpm-unit">BPM</span>
               </div>
-              <button class="stepper" type="button" @click="nudgeBpm(1)">
-                +
-              </button>
-            </div>
 
-            <div class="beat-row">
-              <span
-                v-for="beat in beatDots"
-                :key="beat.id"
-                :class="['beat-dot', { active: beat.active }]"
-              ></span>
+              <div class="beat-row">
+                <span
+                  v-for="beat in beatDots"
+                  :key="beat.id"
+                  :class="['beat-dot', { active: beat.active }]"
+                ></span>
+              </div>
             </div>
+            <button class="stepper" type="button" @click="nudgeBpm(1)">
+              +
+            </button>
           </div>
 
           <button
@@ -532,11 +538,10 @@ onBeforeUnmount(() => {
 .page-shell {
   width: 100%;
   height: 100vh;
-  padding: 20px 16px 16px;
+  padding: 16px;
   display: grid;
   box-sizing: border-box;
   overflow: hidden;
-  align-items: start;
 }
 
 .meter-stage {
@@ -545,7 +550,7 @@ onBeforeUnmount(() => {
   margin: 0 auto;
   display: grid;
   gap: 16px;
-  align-content: start;
+  align-content: center;
   grid-template-columns: minmax(0, 1.18fr) minmax(300px, 0.82fr);
   animation: home-enter 720ms cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -561,8 +566,7 @@ onBeforeUnmount(() => {
 .meter-display {
   padding: 24px;
   display: grid;
-  gap: 18px;
-  align-content: start;
+  gap: 20px;
 }
 
 .display-top {
@@ -631,33 +635,54 @@ onBeforeUnmount(() => {
 .meter-focus-frame {
   position: relative;
   display: grid;
-  gap: 20px;
-  padding: 14px 16px 16px;
-  border-radius: 28px;
-  background: rgba(12, 10, 8, 0.28);
+  width: min(320px, 100%);
+  aspect-ratio: 1 / 1;
+  justify-self: center;
+  justify-items: center;
+  align-content: center;
+  gap: 18px;
+  padding: 18px 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(14, 11, 9, 0.12);
   isolation: isolate;
+  overflow: visible;
   transition:
     transform 140ms ease,
     box-shadow 140ms ease,
-    filter 140ms ease;
+    filter 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.meter-focus-frame > * {
+  position: relative;
+  z-index: 1;
 }
 
 .meter-focus-frame::before {
   content: "";
   position: absolute;
-  inset: -2px;
+  inset: 0;
   border-radius: inherit;
-  background:
-    conic-gradient(
-      from 210deg,
-      var(--glow-primary),
-      var(--glow-secondary),
-      var(--glow-accent),
-      var(--glow-primary)
-    );
-  opacity: 0.46;
-  filter: blur(10px) saturate(115%);
-  z-index: -2;
+  padding: 1.5px;
+  background: conic-gradient(
+    from 180deg,
+    color-mix(in srgb, var(--glow-primary) 70%, white 10%),
+    color-mix(in srgb, var(--glow-secondary) 66%, white 12%),
+    color-mix(in srgb, var(--glow-accent) 62%, white 14%),
+    color-mix(in srgb, var(--glow-primary) 70%, white 10%)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  z-index: 0;
   transition:
     opacity 140ms ease,
     filter 140ms ease,
@@ -667,47 +692,56 @@ onBeforeUnmount(() => {
 .meter-focus-frame::after {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: -6px;
   border-radius: inherit;
-  padding: 1px;
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--glow-primary) 90%, white 10%),
-      color-mix(in srgb, var(--glow-secondary) 84%, white 16%),
-      color-mix(in srgb, var(--glow-accent) 82%, white 18%)
-    );
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  opacity: 0.7;
-  z-index: -1;
+  background: radial-gradient(
+    circle at center,
+    color-mix(in srgb, var(--glow-secondary) 16%, transparent) 0%,
+    color-mix(in srgb, var(--glow-primary) 12%, transparent) 48%,
+    transparent 76%
+  );
+  opacity: 0;
+  filter: blur(14px) saturate(110%);
+  z-index: 0;
+  transition:
+    opacity 140ms ease,
+    filter 140ms ease,
+    transform 140ms ease;
+}
+
+.meter-focus-frame.is-active {
+  border-color: color-mix(in srgb, var(--glow-primary) 18%, rgba(255, 255, 255, 0.1));
+  background: rgba(14, 11, 9, 0.18);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--glow-shadow) 34%, transparent);
+}
+
+.meter-focus-frame.is-active::before {
+  opacity: 0.72;
+}
+
+.meter-focus-frame.is-active::after {
+  opacity: 0.42;
+  filter: blur(16px) saturate(118%);
 }
 
 .meter-focus-frame.is-pulsing {
-  transform: translateY(-1px) scale(1.01);
-  filter: saturate(115%);
+  transform: scale(1.004);
+  filter: saturate(108%);
+  box-shadow:
+    0 0 20px color-mix(in srgb, var(--glow-shadow) 42%, transparent),
+    0 0 32px color-mix(in srgb, var(--glow-primary) 14%, transparent);
 }
 
 .meter-focus-frame.is-pulsing::before {
-  opacity: 0.96;
-  filter: blur(18px) saturate(145%);
-  transform: scale(1.04);
+  opacity: 0.86;
+  filter: saturate(122%) brightness(1.02);
+  transform: scale(1.004);
 }
 
 .meter-focus-frame.is-pulsing::after {
-  opacity: 1;
-}
-
-.meter-focus-frame.is-pulsing {
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.06),
-    0 0 32px var(--glow-shadow);
+  opacity: 0.56;
+  filter: blur(18px) saturate(124%);
+  transform: scale(1.018);
 }
 
 .bpm-number {
@@ -728,6 +762,7 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: center;
   gap: 12px;
+  width: 100%;
 }
 
 .beat-dot {
@@ -750,13 +785,22 @@ onBeforeUnmount(() => {
 
 .transport {
   justify-self: center;
-  min-width: 200px;
-  padding: 14px 24px;
-  border-radius: 999px;
+  width: 168px;
+  height: 48px;
+  min-width: 0;
+  padding: 0 20px;
+  border-radius: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: linear-gradient(135deg, #dfac53, #be7d2e);
   color: #1c140d;
   font-weight: 700;
-  font-size: 1rem;
+  font-size: 0.96rem;
+  line-height: 1;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 248, 229, 0.32),
+    0 10px 24px rgba(190, 125, 46, 0.22);
 }
 
 .control-panel {
@@ -1015,8 +1059,9 @@ onBeforeUnmount(() => {
   }
 
   .meter-focus-frame {
-    gap: 18px;
-    padding: 12px;
+    width: min(320px, 100%);
+    gap: 14px;
+    padding: 14px 16px;
   }
 
   .stepper {
