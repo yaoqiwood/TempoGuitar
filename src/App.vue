@@ -53,12 +53,71 @@ const subdivisionDisplay = computed(() => selectedSubdivision.value.label);
 const activeSubdivisionPattern = computed(
   () => subdivisionPatterns[selectedSubdivisionId.value],
 );
+const subdivisionGlowPalette: Record<
+  NoteSubdivisionId,
+  {
+    primary: string;
+    secondary: string;
+    accent: string;
+    shadow: string;
+  }
+> = {
+  quarter: {
+    primary: "#ff6b6b",
+    secondary: "#ffd166",
+    accent: "#7cf29a",
+    shadow: "rgba(255, 107, 107, 0.28)",
+  },
+  eighth: {
+    primary: "#ff8a5b",
+    secondary: "#ffd93d",
+    accent: "#4de2c5",
+    shadow: "rgba(255, 138, 91, 0.28)",
+  },
+  "eighth-triplet": {
+    primary: "#ff9f43",
+    secondary: "#65d6ff",
+    accent: "#8dff8a",
+    shadow: "rgba(101, 214, 255, 0.28)",
+  },
+  "eighth-triplet-rest": {
+    primary: "#f6c945",
+    secondary: "#54e38e",
+    accent: "#4db8ff",
+    shadow: "rgba(84, 227, 142, 0.28)",
+  },
+  sixteenth: {
+    primary: "#48c6ef",
+    secondary: "#7b61ff",
+    accent: "#ff6ec7",
+    shadow: "rgba(123, 97, 255, 0.28)",
+  },
+  "sixteenth-rest": {
+    primary: "#32d74b",
+    secondary: "#64d2ff",
+    accent: "#ffd166",
+    shadow: "rgba(50, 215, 75, 0.28)",
+  },
+};
+const glowPulseActive = ref(false);
+
+const stageGlowStyle = computed(() => {
+  const palette = subdivisionGlowPalette[selectedSubdivisionId.value];
+
+  return {
+    "--glow-primary": palette.primary,
+    "--glow-secondary": palette.secondary,
+    "--glow-accent": palette.accent,
+    "--glow-shadow": palette.shadow,
+  };
+});
 
 let splashHideTimer: ReturnType<typeof setTimeout> | undefined;
 let audioContext: AudioContext | null = null;
 let nextNoteTime = 0;
 let currentPulseIndex = 0;
 let schedulerTimer: ReturnType<typeof setInterval> | undefined;
+let glowPulseTimer: ReturnType<typeof setTimeout> | undefined;
 
 const lookahead = 25;
 const scheduleAheadTime = 0.1;
@@ -113,7 +172,24 @@ function scheduleVisualBeat(beat: number, time: number) {
 
   window.setTimeout(() => {
     currentBeat.value = beat;
+    triggerGlowPulse();
   }, delay);
+}
+
+function triggerGlowPulse() {
+  glowPulseActive.value = false;
+
+  if (glowPulseTimer) {
+    clearTimeout(glowPulseTimer);
+  }
+
+  window.requestAnimationFrame(() => {
+    glowPulseActive.value = true;
+  });
+
+  glowPulseTimer = window.setTimeout(() => {
+    glowPulseActive.value = false;
+  }, 190);
 }
 
 function playClick(meta: PulseMeta, time: number) {
@@ -166,6 +242,7 @@ async function startMetronome() {
   currentPulseIndex = 0;
   currentBeat.value = 0;
   isPlaying.value = true;
+  triggerGlowPulse();
 
   const startTime = context.currentTime;
   playClick(getPulseMeta(0), startTime);
@@ -182,9 +259,15 @@ function stopMetronome() {
     schedulerTimer = undefined;
   }
 
+  if (glowPulseTimer) {
+    clearTimeout(glowPulseTimer);
+    glowPulseTimer = undefined;
+  }
+
   isPlaying.value = false;
   currentPulseIndex = 0;
   currentBeat.value = null;
+  glowPulseActive.value = false;
 }
 
 async function togglePlayback() {
@@ -262,38 +345,42 @@ onBeforeUnmount(() => {
       <section v-else class="meter-stage">
         <div class="meter-display">
           <div class="display-top">
-            <span class="tag">{{ timeSignature }}</span>
+            <span class="tag tag-strong">{{ timeSignature }}</span>
             <span class="tag app-note-tag">
               <NotationGlyph
                 class="app-note-glyph app-note-glyph-compact"
                 :variant="selectedSubdivision.id"
-                :width="68"
-                :height="40"
+                :width="56"
+                :height="32"
               />
               <span>{{ selectedSubdivision.shortLabel }}</span>
             </span>
-            <span class="tag">{{ soundPack }}</span>
           </div>
 
-          <div class="bpm-block">
-            <button class="stepper" type="button" @click="nudgeBpm(-1)">
-              -
-            </button>
-            <div class="bpm-value">
-              <span class="bpm-number">{{ bpm }}</span>
-              <span class="bpm-unit">BPM</span>
+          <div
+            :class="['meter-focus-frame', { 'is-pulsing': glowPulseActive }]"
+            :style="stageGlowStyle"
+          >
+            <div class="bpm-block">
+              <button class="stepper" type="button" @click="nudgeBpm(-1)">
+                -
+              </button>
+              <div class="bpm-value">
+                <span class="bpm-number">{{ bpm }}</span>
+                <span class="bpm-unit">BPM</span>
+              </div>
+              <button class="stepper" type="button" @click="nudgeBpm(1)">
+                +
+              </button>
             </div>
-            <button class="stepper" type="button" @click="nudgeBpm(1)">
-              +
-            </button>
-          </div>
 
-          <div class="beat-row">
-            <span
-              v-for="beat in beatDots"
-              :key="beat.id"
-              :class="['beat-dot', { active: beat.active }]"
-            ></span>
+            <div class="beat-row">
+              <span
+                v-for="beat in beatDots"
+                :key="beat.id"
+                :class="['beat-dot', { active: beat.active }]"
+              ></span>
+            </div>
           </div>
 
           <button
@@ -445,10 +532,11 @@ onBeforeUnmount(() => {
 .page-shell {
   width: 100%;
   height: 100vh;
-  padding: 16px;
+  padding: 20px 16px 16px;
   display: grid;
   box-sizing: border-box;
   overflow: hidden;
+  align-items: start;
 }
 
 .meter-stage {
@@ -457,7 +545,7 @@ onBeforeUnmount(() => {
   margin: 0 auto;
   display: grid;
   gap: 16px;
-  align-content: center;
+  align-content: start;
   grid-template-columns: minmax(0, 1.18fr) minmax(300px, 0.82fr);
   animation: home-enter 720ms cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -473,28 +561,44 @@ onBeforeUnmount(() => {
 .meter-display {
   padding: 24px;
   display: grid;
-  gap: 20px;
+  gap: 18px;
+  align-content: start;
 }
 
 .display-top {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
 }
 
 .tag {
-  padding: 7px 11px;
+  min-height: 36px;
+  padding: 5px 10px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
   color: rgba(246, 237, 216, 0.84);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.tag-strong {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .app-note-tag {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   color: #fff7ea;
+  padding-right: 12px;
+}
+
+.app-note-tag span:last-child {
+  font-weight: 600;
 }
 
 .bpm-block {
@@ -522,6 +626,88 @@ onBeforeUnmount(() => {
 .bpm-value {
   display: grid;
   justify-items: center;
+}
+
+.meter-focus-frame {
+  position: relative;
+  display: grid;
+  gap: 20px;
+  padding: 14px 16px 16px;
+  border-radius: 28px;
+  background: rgba(12, 10, 8, 0.28);
+  isolation: isolate;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    filter 140ms ease;
+}
+
+.meter-focus-frame::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background:
+    conic-gradient(
+      from 210deg,
+      var(--glow-primary),
+      var(--glow-secondary),
+      var(--glow-accent),
+      var(--glow-primary)
+    );
+  opacity: 0.46;
+  filter: blur(10px) saturate(115%);
+  z-index: -2;
+  transition:
+    opacity 140ms ease,
+    filter 140ms ease,
+    transform 140ms ease;
+}
+
+.meter-focus-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--glow-primary) 90%, white 10%),
+      color-mix(in srgb, var(--glow-secondary) 84%, white 16%),
+      color-mix(in srgb, var(--glow-accent) 82%, white 18%)
+    );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0.7;
+  z-index: -1;
+}
+
+.meter-focus-frame.is-pulsing {
+  transform: translateY(-1px) scale(1.01);
+  filter: saturate(115%);
+}
+
+.meter-focus-frame.is-pulsing::before {
+  opacity: 0.96;
+  filter: blur(18px) saturate(145%);
+  transform: scale(1.04);
+}
+
+.meter-focus-frame.is-pulsing::after {
+  opacity: 1;
+}
+
+.meter-focus-frame.is-pulsing {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 0 32px var(--glow-shadow);
 }
 
 .bpm-number {
@@ -747,8 +933,8 @@ onBeforeUnmount(() => {
 }
 
 .app-note-glyph-compact {
-  width: 76px;
-  height: 44px;
+  width: 60px;
+  height: 34px;
 }
 
 .preset-list {
@@ -826,6 +1012,11 @@ onBeforeUnmount(() => {
   .bpm-block {
     grid-template-columns: 52px 1fr 52px;
     gap: 8px;
+  }
+
+  .meter-focus-frame {
+    gap: 18px;
+    padding: 12px;
   }
 
   .stepper {
