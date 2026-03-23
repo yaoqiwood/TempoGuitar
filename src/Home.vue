@@ -19,11 +19,14 @@ import {
 const bpm = ref(96);
 const timeSignatureMenuOpen = ref(false);
 const soundMenuOpen = ref(false);
+const settingsMenuOpen = ref(false);
 const selectedSoundPackId = ref<SoundPackId>(soundPackOptions[0].id);
 const selectedTimeSignatureId = ref<TimeSignatureId>("4/4");
 const accentPattern = ref("强-弱-弱-弱");
 const subdivisionMenuOpen = ref(false);
 const selectedSubdivisionId = ref<NoteSubdivisionId>(subdivisionOptions[0].id);
+const metronomeVolumePercent = ref(70);
+const metronomeVolume = computed(() => metronomeVolumePercent.value / 100);
 const showSplash = ref(true);
 const selectedTimeSignature = computed(
   () =>
@@ -32,6 +35,9 @@ const selectedTimeSignature = computed(
     ) ?? timeSignatureOptions[0],
 );
 const beatsPerMeasure = computed(() => selectedTimeSignature.value.numerator);
+const beatUnitDenominator = computed(
+  () => selectedTimeSignature.value.denominator,
+);
 
 const {
   currentBeat,
@@ -45,6 +51,8 @@ const {
   selectedSubdivisionId,
   selectedSoundPackId,
   beatsPerMeasure,
+  beatUnitDenominator,
+  metronomeVolume,
 });
 
 const quickPresets = [
@@ -71,8 +79,9 @@ const selectedSubdivision = computed(
 );
 const selectedSoundPack = computed(
   () =>
-    soundPackOptions.find((option) => option.id === selectedSoundPackId.value) ??
-    soundPackOptions[0],
+    soundPackOptions.find(
+      (option) => option.id === selectedSoundPackId.value,
+    ) ?? soundPackOptions[0],
 );
 
 const subdivisionDisplay = computed(() => selectedSubdivision.value.label);
@@ -159,7 +168,10 @@ function getPointerAngle(event: PointerEvent, element: HTMLElement) {
   const rect = element.getBoundingClientRect();
   const centerX = rect.left + rect.width / 2;
   const centerY = rect.top + rect.height / 2;
-  return (Math.atan2(event.clientY - centerY, event.clientX - centerX) * 180) / Math.PI;
+  return (
+    (Math.atan2(event.clientY - centerY, event.clientX - centerX) * 180) /
+    Math.PI
+  );
 }
 
 function normalizeAngleDelta(delta: number) {
@@ -176,9 +188,10 @@ function normalizeAngleDelta(delta: number) {
 
 function applyDragAngleDelta(deltaAngle: number) {
   dragBpmAccumulator += (deltaAngle / 360) * bpmPerFullTurn;
-  const wholeStep = dragBpmAccumulator > 0
-    ? Math.floor(dragBpmAccumulator)
-    : Math.ceil(dragBpmAccumulator);
+  const wholeStep =
+    dragBpmAccumulator > 0
+      ? Math.floor(dragBpmAccumulator)
+      : Math.ceil(dragBpmAccumulator);
 
   if (wholeStep === 0) {
     return;
@@ -291,6 +304,14 @@ function selectSoundPack(optionId: SoundPackId) {
   soundMenuOpen.value = false;
 }
 
+function toggleSettingsMenu() {
+  settingsMenuOpen.value = !settingsMenuOpen.value;
+}
+
+function closeSettingsMenu() {
+  settingsMenuOpen.value = false;
+}
+
 onMounted(() => {
   void warmupAudioContext().catch(() => {
     // Some runtimes still require a user gesture before audio can fully start.
@@ -326,6 +347,14 @@ onBeforeUnmount(() => {
               />
               <span>{{ selectedSubdivision.shortLabel }}</span>
             </span>
+            <button
+              class="settings-gear"
+              type="button"
+              aria-label="节拍器设置"
+              @click="toggleSettingsMenu"
+            >
+              ⚙
+            </button>
           </div>
 
           <div class="bpm-block">
@@ -354,7 +383,11 @@ onBeforeUnmount(() => {
                 </span>
               </div>
               <span class="drag-hint" aria-hidden="true">
-                {{ isBpmDragging ? "Adjusting tempo" : "Drag ring to adjust tempo" }}
+                {{
+                  isBpmDragging
+                    ? "正在调整速度"
+                    : "拖动圆环调整速度"
+                }}
               </span>
               <div class="bpm-value">
                 <span class="bpm-number">{{ bpm }}</span>
@@ -437,7 +470,9 @@ onBeforeUnmount(() => {
                   @click="toggleSoundMenu"
                 >
                   <strong class="sound-trigger-content">
-                    <span class="sound-trigger-title">{{ soundPackDisplay }}</span>
+                    <span class="sound-trigger-title">{{
+                      soundPackDisplay
+                    }}</span>
                     <span class="sound-trigger-preview">{{
                       selectedSoundPack.previewLine
                     }}</span>
@@ -480,6 +515,38 @@ onBeforeUnmount(() => {
       </section>
     </Transition>
   </main>
+
+  <Transition name="sheet-fade">
+    <div
+      v-if="settingsMenuOpen"
+      class="settings-overlay"
+      @click.self="closeSettingsMenu"
+    >
+      <section class="settings-panel">
+        <div class="settings-header">
+          <h3>节拍器设置</h3>
+          <button type="button" class="settings-close" @click="closeSettingsMenu">
+            关闭
+          </button>
+        </div>
+
+        <div class="settings-row">
+          <div class="settings-row-main">
+            <span class="settings-label">节拍器音量</span>
+            <strong class="settings-value">{{ metronomeVolumePercent }}%</strong>
+          </div>
+          <input
+            v-model.number="metronomeVolumePercent"
+            class="settings-slider"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+          />
+        </div>
+      </section>
+    </div>
+  </Transition>
 
   <TimeSignaturePickerSheet
     :open="timeSignatureMenuOpen"
@@ -605,6 +672,104 @@ onBeforeUnmount(() => {
   gap: 6px;
 }
 
+.settings-gear {
+  margin-left: auto;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(246, 237, 216, 0.88);
+  font-size: 1rem;
+  line-height: 1;
+  transition:
+    transform 140ms ease,
+    background-color 140ms ease;
+}
+
+.settings-gear:hover {
+  background: rgba(223, 172, 83, 0.2);
+  transform: rotate(18deg);
+}
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 96;
+  background: rgba(7, 6, 5, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.settings-panel {
+  width: min(460px, 100%);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(
+    180deg,
+    rgba(31, 26, 20, 0.98),
+    rgba(16, 13, 11, 0.99)
+  );
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.36);
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-header h3 {
+  margin: 0;
+  font-size: 1.04rem;
+}
+
+.settings-close {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f6edd8;
+}
+
+.settings-row {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-row-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.settings-label {
+  color: rgba(246, 237, 216, 0.72);
+  font-size: 0.9rem;
+}
+
+.settings-value {
+  color: #f6edd8;
+  font-size: 1rem;
+}
+
+.settings-slider {
+  width: 100%;
+  accent-color: #dfac53;
+}
+
 .tag {
   --top-tag-height: 38px;
   display: inline-flex;
@@ -707,15 +872,25 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: conic-gradient(
     from -90deg,
-    color-mix(in srgb, var(--glow-secondary) 82%, white 8%) 0 var(--bpm-progress),
-    color-mix(in srgb, var(--glow-primary) 12%, transparent) var(--bpm-progress) 100%
+    color-mix(in srgb, var(--glow-secondary) 82%, white 8%) 0
+      var(--bpm-progress),
+    color-mix(in srgb, var(--glow-primary) 12%, transparent) var(--bpm-progress)
+      100%
   );
-  -webkit-mask:
-    radial-gradient(farthest-side, transparent calc(100% - 10px), #000 calc(100% - 9px));
-  mask:
-    radial-gradient(farthest-side, transparent calc(100% - 10px), #000 calc(100% - 9px));
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 10px),
+    #000 calc(100% - 9px)
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 10px),
+    #000 calc(100% - 9px)
+  );
   opacity: 0.26;
-  transition: opacity 160ms ease, filter 160ms ease;
+  transition:
+    opacity 160ms ease,
+    filter 160ms ease;
 }
 
 .drag-handle-track {
@@ -739,12 +914,15 @@ onBeforeUnmount(() => {
     0 0 0 2px rgba(16, 13, 10, 0.88),
     0 0 14px color-mix(in srgb, var(--glow-secondary) 42%, transparent);
   opacity: 0.88;
-  transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    opacity 160ms ease;
 }
 
 .drag-hint {
   position: absolute;
-  top: 18px;
+  top: 24px;
   left: 50%;
   transform: translate(-50%, -4px);
   padding: 4px 10px;
@@ -814,7 +992,11 @@ onBeforeUnmount(() => {
 }
 
 .meter-focus-frame.is-active {
-  border-color: color-mix(in srgb, var(--glow-primary) 18%, rgba(255, 255, 255, 0.1));
+  border-color: color-mix(
+    in srgb,
+    var(--glow-primary) 18%,
+    rgba(255, 255, 255, 0.1)
+  );
   background: rgba(14, 11, 9, 0.18);
   box-shadow: 0 0 18px color-mix(in srgb, var(--glow-shadow) 34%, transparent);
 }
@@ -829,7 +1011,11 @@ onBeforeUnmount(() => {
 }
 
 .meter-focus-frame.is-drag-ready {
-  border-color: color-mix(in srgb, var(--glow-secondary) 26%, rgba(255, 255, 255, 0.12));
+  border-color: color-mix(
+    in srgb,
+    var(--glow-secondary) 26%,
+    rgba(255, 255, 255, 0.12)
+  );
   background: rgba(14, 11, 9, 0.2);
   transform: scale(1.006);
 }
@@ -872,31 +1058,14 @@ onBeforeUnmount(() => {
   transform: scale(1.018);
 }
 
-.meter-focus-frame.is-pulsing.is-strong-pulse {
-  transform: scale(1.012);
-  filter: saturate(126%) brightness(1.03);
-  box-shadow:
-    0 0 26px color-mix(in srgb, var(--glow-shadow) 58%, transparent),
-    0 0 44px color-mix(in srgb, var(--glow-primary) 28%, transparent),
-    0 0 68px color-mix(in srgb, var(--glow-accent) 18%, transparent);
-}
-
-.meter-focus-frame.is-pulsing.is-strong-pulse::before {
-  opacity: 1;
-  filter: saturate(140%) brightness(1.08);
-  transform: scale(1.01);
-}
-
-.meter-focus-frame.is-pulsing.is-strong-pulse::after {
-  opacity: 0.78;
-  filter: blur(24px) saturate(138%) brightness(1.05);
-  transform: scale(1.038);
-}
-
 .meter-focus-frame.is-dragging {
   transform: scale(1.014);
   filter: saturate(122%);
-  border-color: color-mix(in srgb, var(--glow-secondary) 34%, rgba(255, 255, 255, 0.14));
+  border-color: color-mix(
+    in srgb,
+    var(--glow-secondary) 34%,
+    rgba(255, 255, 255, 0.14)
+  );
   box-shadow:
     0 0 24px color-mix(in srgb, var(--glow-shadow) 48%, transparent),
     0 0 38px color-mix(in srgb, var(--glow-secondary) 24%, transparent);
@@ -929,20 +1098,31 @@ onBeforeUnmount(() => {
   opacity: 1;
   transform: translate(-50%, 0);
   color: #fff8ea;
-  border-color: color-mix(in srgb, var(--glow-secondary) 34%, rgba(255, 255, 255, 0.12));
-  background: color-mix(in srgb, rgba(18, 15, 12, 0.84) 78%, var(--glow-primary) 22%);
+  border-color: color-mix(
+    in srgb,
+    var(--glow-secondary) 34%,
+    rgba(255, 255, 255, 0.12)
+  );
+  background: color-mix(
+    in srgb,
+    rgba(18, 15, 12, 0.84) 78%,
+    var(--glow-primary) 22%
+  );
 }
 
 .bpm-number {
   font-size: clamp(4.4rem, 12vw, 7rem);
   line-height: 0.92;
   font-weight: 700;
-  transition: transform 120ms ease, text-shadow 120ms ease;
+  transition:
+    transform 120ms ease,
+    text-shadow 120ms ease;
 }
 
 .meter-focus-frame.is-dragging .bpm-number {
   transform: scale(1.02);
-  text-shadow: 0 0 24px color-mix(in srgb, var(--glow-secondary) 30%, transparent);
+  text-shadow: 0 0 24px
+    color-mix(in srgb, var(--glow-secondary) 30%, transparent);
 }
 
 .bpm-unit {
@@ -980,7 +1160,11 @@ onBeforeUnmount(() => {
 
 @media (hover: hover) and (pointer: fine) {
   .meter-focus-frame:hover:not(.is-dragging) {
-    border-color: color-mix(in srgb, var(--glow-secondary) 22%, rgba(255, 255, 255, 0.12));
+    border-color: color-mix(
+      in srgb,
+      var(--glow-secondary) 22%,
+      rgba(255, 255, 255, 0.12)
+    );
     background: rgba(14, 11, 9, 0.19);
     transform: scale(1.005);
   }

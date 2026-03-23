@@ -39,8 +39,8 @@ export const soundPackOptions: SoundPackOption[] = [
   },
   {
     id: "count-one-e-and-e",
-    label: "人声数拍：一 e 与 e",
-    subtitle: "适用于“一 e 与 e，二 e 与 e...”的重音流动",
-    previewLine: "一 e 与 e 二 e 与 e 三 e 与 e 四 e 与 e",
+    label: "人声数拍（随细分）",
+    subtitle: "四分：one two three four；八分：one and two and；十六分：one e and a",
+    previewLine: "4分：one two three four | 8分：one and two and | 16分：one e and a",
   },
 ];
