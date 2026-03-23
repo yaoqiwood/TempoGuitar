@@ -2,19 +2,19 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import NotationGlyph from "./components/NotationGlyph.vue";
 import SplashIntro from "./components/SplashIntro.vue";
+import SubdivisionPickerSheet from "./components/SubdivisionPickerSheet.vue";
+import {
+  subdivisionOptions,
+  subdivisionPatterns,
+  type NoteSubdivisionId,
+} from "./types/subdivision";
 
-type NoteSubdivisionId =
-  | "quarter"
-  | "eighth"
-  | "eighth-triplet"
-  | "eighth-triplet-rest"
-  | "sixteenth"
-  | "sixteenth-rest";
-
-type NoteSubdivisionOption = {
-  id: NoteSubdivisionId;
-  label: string;
-  shortLabel: string;
+type PulseMeta = {
+  beat: number;
+  pulseInBeat: number;
+  isActivePulse: boolean;
+  isBeatStart: boolean;
+  isMeasureStart: boolean;
 };
 
 const bpm = ref(96);
@@ -26,48 +26,15 @@ const timeSignature = ref("4/4");
 const soundPack = ref("Studio Click");
 const accentPattern = ref("强-弱-弱-弱");
 const subdivisionMenuOpen = ref(false);
-
-const subdivisionOptions: NoteSubdivisionOption[] = [
-  {
-    id: "quarter",
-    label: "4分音符",
-    shortLabel: "4分",
-  },
-  {
-    id: "eighth",
-    label: "8分音符",
-    shortLabel: "8分",
-  },
-  {
-    id: "eighth-triplet",
-    label: "8分音三连音",
-    shortLabel: "3连音",
-  },
-  {
-    id: "eighth-triplet-rest",
-    label: "8分音三连音中间空一拍",
-    shortLabel: "3连音空1",
-  },
-  {
-    id: "sixteenth",
-    label: "16分音符",
-    shortLabel: "16分",
-  },
-  {
-    id: "sixteenth-rest",
-    label: "16分音符中间空两拍",
-    shortLabel: "16分空2",
-  },
-];
-
-const selectedSubdivisionId = ref(subdivisionOptions[0].id);
+const selectedSubdivisionId = ref<NoteSubdivisionId>(subdivisionOptions[0].id);
+const noteGlyphScaleAdjust = -0.4;
 
 const showSplash = ref(true);
 
 const quickPresets = [
-  { label: "热身", bpm: 72, detail: "舒展手指，慢速进入状态" },
+  { label: "热身", bpm: 72, detail: "舒展手指，慢速进入练习状态" },
   { label: "基础", bpm: 96, detail: "日常练习的稳定速度" },
-  { label: "冲刺", bpm: 120, detail: "提升控制与耐力" },
+  { label: "冲刺", bpm: 120, detail: "提升控制力与耐力" },
 ];
 
 const beatDots = computed(() =>
@@ -85,11 +52,14 @@ const selectedSubdivision = computed(
 );
 
 const subdivisionDisplay = computed(() => selectedSubdivision.value.label);
+const activeSubdivisionPattern = computed(
+  () => subdivisionPatterns[selectedSubdivisionId.value],
+);
 
 let splashHideTimer: ReturnType<typeof setTimeout> | undefined;
 let audioContext: AudioContext | null = null;
 let nextNoteTime = 0;
-let currentBeatIndex = 0;
+let currentPulseIndex = 0;
 let schedulerTimer: ReturnType<typeof setInterval> | undefined;
 
 const lookahead = 25;
@@ -113,10 +83,30 @@ async function warmupAudioContext() {
   return context;
 }
 
-function advanceBeat() {
-  const secondsPerBeat = 60 / bpm.value;
-  nextNoteTime += secondsPerBeat;
-  currentBeatIndex = (currentBeatIndex + 1) % beatsPerMeasure;
+function getSecondsPerPulse() {
+  return 60 / bpm.value / activeSubdivisionPattern.value.pulsesPerBeat;
+}
+
+function getPulseMeta(pulseIndex: number): PulseMeta {
+  const pattern = activeSubdivisionPattern.value;
+  const pulsesPerMeasure = beatsPerMeasure * pattern.pulsesPerBeat;
+  const normalizedPulseIndex =
+    ((pulseIndex % pulsesPerMeasure) + pulsesPerMeasure) % pulsesPerMeasure;
+  const beat = Math.floor(normalizedPulseIndex / pattern.pulsesPerBeat);
+  const pulseInBeat = normalizedPulseIndex % pattern.pulsesPerBeat;
+
+  return {
+    beat,
+    pulseInBeat,
+    isActivePulse: pattern.activePulseIndexes.includes(pulseInBeat),
+    isBeatStart: pulseInBeat === 0,
+    isMeasureStart: beat === 0 && pulseInBeat === 0,
+  };
+}
+
+function advancePulse() {
+  nextNoteTime += getSecondsPerPulse();
+  currentPulseIndex += 1;
 }
 
 function scheduleVisualBeat(beat: number, time: number) {
@@ -128,27 +118,29 @@ function scheduleVisualBeat(beat: number, time: number) {
   }, delay);
 }
 
-function playClick(beat: number, time: number) {
+function playClick(meta: PulseMeta, time: number) {
   const context = ensureAudioContext();
   const oscillator = context.createOscillator();
   const gainNode = context.createGain();
-  const isAccent = beat === 0;
 
   oscillator.type = "triangle";
-  oscillator.frequency.setValueAtTime(isAccent ? 1360 : 920, time);
+  oscillator.frequency.setValueAtTime(
+    meta.isMeasureStart ? 1360 : meta.isBeatStart ? 1040 : 820,
+    time,
+  );
 
   gainNode.gain.setValueAtTime(0.0001, time);
   gainNode.gain.exponentialRampToValueAtTime(
-    isAccent ? 0.28 : 0.18,
+    meta.isMeasureStart ? 0.28 : meta.isBeatStart ? 0.2 : 0.12,
     time + 0.004,
   );
-  gainNode.gain.exponentialRampToValueAtTime(0.0001, time + 0.08);
+  gainNode.gain.exponentialRampToValueAtTime(0.0001, time + 0.06);
 
   oscillator.connect(gainNode);
   gainNode.connect(context.destination);
 
   oscillator.start(time);
-  oscillator.stop(time + 0.09);
+  oscillator.stop(time + 0.07);
 }
 
 function scheduleBeat() {
@@ -156,24 +148,31 @@ function scheduleBeat() {
     audioContext &&
     nextNoteTime < audioContext.currentTime + scheduleAheadTime
   ) {
-    const beat = currentBeatIndex;
-    playClick(beat, nextNoteTime);
-    scheduleVisualBeat(beat, nextNoteTime);
-    advanceBeat();
+    const meta = getPulseMeta(currentPulseIndex);
+
+    if (meta.isBeatStart) {
+      scheduleVisualBeat(meta.beat, nextNoteTime);
+    }
+
+    if (meta.isActivePulse) {
+      playClick(meta, nextNoteTime);
+    }
+
+    advancePulse();
   }
 }
 
 async function startMetronome() {
   const context = await warmupAudioContext();
 
-  currentBeatIndex = 0;
+  currentPulseIndex = 0;
   currentBeat.value = 0;
   isPlaying.value = true;
 
   const startTime = context.currentTime;
-  playClick(0, startTime);
-  advanceBeat();
-  nextNoteTime = startTime + 60 / bpm.value;
+  playClick(getPulseMeta(0), startTime);
+  advancePulse();
+  nextNoteTime = startTime + getSecondsPerPulse();
 
   scheduleBeat();
   schedulerTimer = window.setInterval(scheduleBeat, lookahead);
@@ -186,7 +185,7 @@ function stopMetronome() {
   }
 
   isPlaying.value = false;
-  currentBeatIndex = 0;
+  currentPulseIndex = 0;
   currentBeat.value = null;
 }
 
@@ -211,6 +210,10 @@ function toggleSubdivisionMenu() {
   subdivisionMenuOpen.value = !subdivisionMenuOpen.value;
 }
 
+function closeSubdivisionMenu() {
+  subdivisionMenuOpen.value = false;
+}
+
 function selectSubdivision(optionId: NoteSubdivisionId) {
   selectedSubdivisionId.value = optionId;
   subdivisionMenuOpen.value = false;
@@ -218,6 +221,14 @@ function selectSubdivision(optionId: NoteSubdivisionId) {
 
 watch(bpm, () => {
   if (isPlaying.value && audioContext) {
+    nextNoteTime = audioContext.currentTime + 0.06;
+  }
+});
+
+watch(selectedSubdivisionId, () => {
+  if (isPlaying.value && audioContext) {
+    currentPulseIndex = 0;
+    currentBeat.value = 0;
     nextNoteTime = audioContext.currentTime + 0.06;
   }
 });
@@ -260,6 +271,7 @@ onBeforeUnmount(() => {
                 :variant="selectedSubdivision.id"
                 :width="68"
                 :height="40"
+                :scale-adjust="noteGlyphScaleAdjust"
               />
               <span>{{ selectedSubdivision.shortLabel }}</span>
             </span>
@@ -309,7 +321,9 @@ onBeforeUnmount(() => {
             <div class="setting-grid">
               <div class="setting-card setting-card-highlight">
                 <span class="setting-label">拍号</span>
-                <strong class="setting-value setting-value-emphasis">{{ timeSignature }}</strong>
+                <strong class="setting-value setting-value-emphasis">{{
+                  timeSignature
+                }}</strong>
               </div>
               <div class="setting-card note-setting-card">
                 <span class="setting-label">音符</span>
@@ -324,6 +338,7 @@ onBeforeUnmount(() => {
                       :variant="selectedSubdivision.id"
                       :width="132"
                       :height="72"
+                      :scale-adjust="noteGlyphScaleAdjust"
                     />
                     <span>{{ subdivisionDisplay }}</span>
                   </strong>
@@ -338,7 +353,9 @@ onBeforeUnmount(() => {
               </div>
               <div class="setting-card setting-card-highlight">
                 <span class="setting-label">重音</span>
-                <strong class="setting-value accent-pattern-value">{{ accentPattern }}</strong>
+                <strong class="setting-value accent-pattern-value">{{
+                  accentPattern
+                }}</strong>
               </div>
             </div>
           </div>
@@ -368,65 +385,15 @@ onBeforeUnmount(() => {
     </Transition>
   </main>
 
-  <Transition name="sheet-fade">
-    <div
-      v-if="subdivisionMenuOpen"
-      class="note-sheet-overlay"
-      @click.self="subdivisionMenuOpen = false"
-    >
-      <Transition name="note-sheet">
-        <section v-if="subdivisionMenuOpen" class="note-sheet-panel">
-          <div class="note-sheet-header">
-            <div>
-              <span class="note-sheet-eyebrow">音符选择</span>
-              <h3>选择节奏音符</h3>
-            </div>
-            <button
-              class="note-sheet-close"
-              type="button"
-              @click="subdivisionMenuOpen = false"
-            >
-              关闭
-            </button>
-          </div>
-
-          <div class="note-sheet-current">
-            <span>当前：</span>
-            <NotationGlyph
-              class="note-glyph note-glyph-current"
-              :variant="selectedSubdivision.id"
-              :width="112"
-              :height="62"
-            />
-            <strong>{{ subdivisionDisplay }}</strong>
-          </div>
-
-          <div class="note-select-popup">
-            <button
-              v-for="option in subdivisionOptions"
-              :key="option.id"
-              :class="[
-                'note-option',
-                {
-                  active: option.id === selectedSubdivisionId,
-                },
-              ]"
-              type="button"
-              @click="selectSubdivision(option.id)"
-            >
-              <NotationGlyph
-                class="note-glyph note-glyph-option"
-                :variant="option.id"
-                :width="176"
-                :height="92"
-              />
-              <span class="note-option-label">{{ option.label }}</span>
-            </button>
-          </div>
-        </section>
-      </Transition>
-    </div>
-  </Transition>
+  <SubdivisionPickerSheet
+    :open="subdivisionMenuOpen"
+    :current-subdivision-id="selectedSubdivision.id"
+    :current-subdivision-label="subdivisionDisplay"
+    :options="subdivisionOptions"
+    :glyph-scale-adjust="noteGlyphScaleAdjust"
+    @close="closeSubdivisionMenu"
+    @select="selectSubdivision"
+  />
 </template>
 
 <style scoped>
@@ -773,128 +740,6 @@ onBeforeUnmount(() => {
   font-size: 0.76rem;
 }
 
-.note-sheet-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(7, 6, 5, 0.58);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  z-index: 80;
-}
-
-.note-sheet-panel {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: min(50vh, 480px);
-  padding: 20px 20px 24px;
-  border-radius: 28px 28px 0 0;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background:
-    linear-gradient(180deg, rgba(31, 26, 20, 0.98), rgba(16, 13, 11, 0.99));
-  box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.32);
-  display: grid;
-  grid-template-rows: auto auto 1fr;
-  gap: 14px;
-}
-
-.note-sheet-header {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.note-sheet-eyebrow {
-  display: inline-block;
-  margin-bottom: 6px;
-  color: rgba(246, 237, 216, 0.5);
-  font-size: 0.74rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.note-sheet-header h3 {
-  margin: 0;
-  font-size: 1.1rem;
-}
-
-.note-sheet-close {
-  padding: 10px 14px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #f6edd8;
-}
-
-.note-sheet-current {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: rgba(246, 237, 216, 0.72);
-  font-size: 0.92rem;
-  flex-wrap: nowrap;
-  min-height: 92px;
-}
-
-.note-sheet-current strong {
-  color: #f6edd8;
-}
-
-.note-select-popup {
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 2px 4px 2px 2px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  box-sizing: border-box;
-}
-
-.note-option {
-  padding: 16px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.03);
-  color: #fff6e8;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  text-align: left;
-  min-width: 0;
-  overflow: hidden;
-  box-sizing: border-box;
-  min-height: 168px;
-  transition:
-    transform 140ms ease,
-    border-color 140ms ease,
-    background-color 140ms ease;
-}
-
-.note-option:hover {
-  transform: translateY(-1px);
-  border-color: rgba(223, 172, 83, 0.34);
-  background: rgba(223, 172, 83, 0.08);
-}
-
-.note-option.active {
-  border-color: rgba(223, 172, 83, 0.58);
-  background: rgba(223, 172, 83, 0.14);
-  color: #fffbed;
-}
-
-.note-option-label {
-  display: block;
-  flex: 1;
-  min-width: 0;
-  font-size: 0.78rem;
-  line-height: 1.45;
-  color: rgba(246, 237, 216, 0.86);
-  white-space: nowrap;
-}
-
 .note-glyph {
   flex: none;
   color: #fff8ee;
@@ -905,22 +750,6 @@ onBeforeUnmount(() => {
 .note-glyph-compact {
   width: 76px;
   height: 44px;
-}
-
-.note-glyph-current {
-  width: 126px;
-  height: 76px;
-}
-
-.note-glyph-option {
-  width: 176px;
-  height: 98px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  padding-left: 20px;
-  box-sizing: border-box;
-  margin-bottom: 0;
 }
 
 .preset-list {
@@ -952,42 +781,6 @@ onBeforeUnmount(() => {
 .screen-fade-leave-to {
   opacity: 0;
   transform: translateY(20px);
-}
-
-.note-menu-enter-active,
-.note-menu-leave-active {
-  transition:
-    opacity 180ms ease,
-    transform 180ms ease;
-}
-
-.note-menu-enter-from,
-.note-menu-leave-to {
-  opacity: 0;
-  transform: translateY(10px);
-}
-
-.sheet-fade-enter-active,
-.sheet-fade-leave-active {
-  transition: opacity 180ms ease;
-}
-
-.sheet-fade-enter-from,
-.sheet-fade-leave-to {
-  opacity: 0;
-}
-
-.note-sheet-enter-active,
-.note-sheet-leave-active {
-  transition:
-    opacity 220ms ease,
-    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.note-sheet-enter-from,
-.note-sheet-leave-to {
-  opacity: 0;
-  transform: translateY(28px);
 }
 
 @keyframes home-enter {
@@ -1043,16 +836,6 @@ onBeforeUnmount(() => {
 
   .setting-grid {
     grid-template-columns: 1fr;
-  }
-
-  .note-select-popup {
-    grid-template-columns: 1fr;
-  }
-
-  .note-sheet-panel {
-    height: min(58vh, 560px);
-    padding: 18px 16px 22px;
-    border-radius: 24px 24px 0 0;
   }
 }
 </style>

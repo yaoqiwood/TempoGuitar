@@ -24,10 +24,12 @@ const props = withDefaults(
     variant: NotationVariant;
     width?: number;
     height?: number;
+    scaleAdjust?: number;
   }>(),
   {
     width: 96,
     height: 56,
+    scaleAdjust: 0,
   },
 );
 
@@ -35,20 +37,24 @@ const host = ref<HTMLDivElement | null>(null);
 let renderVersion = 0;
 
 function getScaleFactor() {
-  switch (props.variant) {
-    case "quarter":
-      return 2.4;
-    case "eighth":
-      return 2.2;
-    case "eighth-triplet":
-    case "eighth-triplet-rest":
-      return 2.1;
-    case "sixteenth":
-    case "sixteenth-rest":
-      return 2;
-    default:
-      return 2.1;
-  }
+  const baseScaleFactor = (() => {
+    switch (props.variant) {
+      case "quarter":
+        return 2.4;
+      case "eighth":
+        return 2.2;
+      case "eighth-triplet":
+      case "eighth-triplet-rest":
+        return 2.1;
+      case "sixteenth":
+      case "sixteenth-rest":
+        return 2;
+      default:
+        return 2.1;
+    }
+  })();
+
+  return Math.max(0.6, baseScaleFactor + props.scaleAdjust);
 }
 
 function createQuarterNote() {
@@ -249,7 +255,7 @@ onMounted(() => {
 });
 
 watch(
-  () => [props.variant, props.width, props.height],
+  () => [props.variant, props.width, props.height, props.scaleAdjust],
   () => {
     void renderNotation();
   },
