@@ -1,11 +1,20 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import NotationGlyph from "./components/NotationGlyph.vue";
 import SplashIntro from "./components/SplashIntro.vue";
 
+type NoteSubdivisionId =
+  | "quarter"
+  | "eighth"
+  | "eighth-triplet"
+  | "eighth-triplet-rest"
+  | "sixteenth"
+  | "sixteenth-rest";
+
 type NoteSubdivisionOption = {
-  id: string;
-  symbol: string;
+  id: NoteSubdivisionId;
   label: string;
+  shortLabel: string;
 };
 
 const bpm = ref(96);
@@ -19,16 +28,36 @@ const accentPattern = ref("强-弱-弱-弱");
 const subdivisionMenuOpen = ref(false);
 
 const subdivisionOptions: NoteSubdivisionOption[] = [
-  { id: "quarter", symbol: "♩", label: "4分音符" },
-  { id: "eighth", symbol: "♪ ♪", label: "8分音符" },
-  { id: "eighth-triplet", symbol: "♪ ♪ ♪", label: "8分音 3连音" },
+  {
+    id: "quarter",
+    label: "4分音符",
+    shortLabel: "4分",
+  },
+  {
+    id: "eighth",
+    label: "8分音符",
+    shortLabel: "8分",
+  },
+  {
+    id: "eighth-triplet",
+    label: "8分音三连音",
+    shortLabel: "3连音",
+  },
   {
     id: "eighth-triplet-rest",
-    symbol: "♪ · ♪",
-    label: "8分音符 3连音中间空一拍",
+    label: "8分音三连音中间空一拍",
+    shortLabel: "3连音空1",
   },
-  { id: "sixteenth", symbol: "♬", label: "16分音符" },
-  { id: "sixteenth-rest", symbol: "♬ · ·", label: "16分音符中间空两拍" },
+  {
+    id: "sixteenth",
+    label: "16分音符",
+    shortLabel: "16分",
+  },
+  {
+    id: "sixteenth-rest",
+    label: "16分音符中间空两拍",
+    shortLabel: "16分空2",
+  },
 ];
 
 const selectedSubdivisionId = ref(subdivisionOptions[0].id);
@@ -55,9 +84,7 @@ const selectedSubdivision = computed(
     ) ?? subdivisionOptions[0],
 );
 
-const subdivisionDisplay = computed(
-  () => `${selectedSubdivision.value.symbol} ${selectedSubdivision.value.label}`,
-);
+const subdivisionDisplay = computed(() => selectedSubdivision.value.label);
 
 let splashHideTimer: ReturnType<typeof setTimeout> | undefined;
 let audioContext: AudioContext | null = null;
@@ -184,7 +211,7 @@ function toggleSubdivisionMenu() {
   subdivisionMenuOpen.value = !subdivisionMenuOpen.value;
 }
 
-function selectSubdivision(optionId: string) {
+function selectSubdivision(optionId: NoteSubdivisionId) {
   selectedSubdivisionId.value = optionId;
   subdivisionMenuOpen.value = false;
 }
@@ -227,7 +254,15 @@ onBeforeUnmount(() => {
         <div class="meter-display">
           <div class="display-top">
             <span class="tag">{{ timeSignature }}</span>
-            <span class="tag">{{ selectedSubdivision.symbol }}</span>
+            <span class="tag note-tag">
+              <NotationGlyph
+                class="note-glyph note-glyph-compact"
+                :variant="selectedSubdivision.id"
+                :width="68"
+                :height="40"
+              />
+              <span>{{ selectedSubdivision.shortLabel }}</span>
+            </span>
             <span class="tag">{{ soundPack }}</span>
           </div>
 
@@ -272,9 +307,9 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="setting-grid">
-              <div class="setting-card">
+              <div class="setting-card setting-card-highlight">
                 <span class="setting-label">拍号</span>
-                <strong>{{ timeSignature }}</strong>
+                <strong class="setting-value setting-value-emphasis">{{ timeSignature }}</strong>
               </div>
               <div class="setting-card note-setting-card">
                 <span class="setting-label">音符</span>
@@ -283,19 +318,27 @@ onBeforeUnmount(() => {
                   type="button"
                   @click="toggleSubdivisionMenu"
                 >
-                  <strong>{{ subdivisionDisplay }}</strong>
+                  <strong class="note-trigger-content">
+                    <NotationGlyph
+                      class="note-glyph"
+                      :variant="selectedSubdivision.id"
+                      :width="132"
+                      :height="72"
+                    />
+                    <span>{{ subdivisionDisplay }}</span>
+                  </strong>
                   <span class="note-select-caret">{{
                     subdivisionMenuOpen ? "▲" : "▼"
                   }}</span>
                 </button>
               </div>
-              <div class="setting-card">
+              <div class="setting-card setting-card-highlight">
                 <span class="setting-label">音色</span>
-                <strong>{{ soundPack }}</strong>
+                <strong class="setting-value">{{ soundPack }}</strong>
               </div>
-              <div class="setting-card">
+              <div class="setting-card setting-card-highlight">
                 <span class="setting-label">重音</span>
-                <strong>{{ accentPattern }}</strong>
+                <strong class="setting-value accent-pattern-value">{{ accentPattern }}</strong>
               </div>
             </div>
           </div>
@@ -348,7 +391,14 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="note-sheet-current">
-            当前：{{ subdivisionDisplay }}
+            <span>当前：</span>
+            <NotationGlyph
+              class="note-glyph note-glyph-current"
+              :variant="selectedSubdivision.id"
+              :width="112"
+              :height="62"
+            />
+            <strong>{{ subdivisionDisplay }}</strong>
           </div>
 
           <div class="note-select-popup">
@@ -364,7 +414,12 @@ onBeforeUnmount(() => {
               type="button"
               @click="selectSubdivision(option.id)"
             >
-              <span class="note-option-symbol">{{ option.symbol }}</span>
+              <NotationGlyph
+                class="note-glyph note-glyph-option"
+                :variant="option.id"
+                :width="176"
+                :height="92"
+              />
               <span class="note-option-label">{{ option.label }}</span>
             </button>
           </div>
@@ -471,6 +526,13 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.06);
   color: rgba(246, 237, 216, 0.84);
   font-size: 0.9rem;
+}
+
+.note-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff7ea;
 }
 
 .bpm-block {
@@ -602,21 +664,81 @@ onBeforeUnmount(() => {
 .setting-card {
   border-radius: 16px;
   display: grid;
-  gap: 4px;
+  gap: 8px;
+  min-height: 96px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.setting-card:hover {
+  border-color: rgba(223, 172, 83, 0.24);
+  background: rgba(255, 255, 255, 0.06);
+  transform: translateY(-1px);
+}
+
+.setting-card-highlight {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.07),
+      rgba(255, 255, 255, 0.03)
+    ),
+    radial-gradient(
+      circle at top right,
+      rgba(223, 172, 83, 0.16),
+      transparent 48%
+    );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .note-setting-card {
   position: relative;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.055),
+      rgba(255, 255, 255, 0.028)
+    ),
+    radial-gradient(
+      circle at top right,
+      rgba(94, 129, 115, 0.18),
+      transparent 52%
+    );
 }
 
 .setting-label {
   color: rgba(246, 237, 216, 0.56);
   font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.setting-value {
+  display: block;
+  color: #fff7e7;
+  font-size: 1.04rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.setting-value-emphasis {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.accent-pattern-value {
+  color: #f3c97a;
+  letter-spacing: 0.08em;
 }
 
 .note-select-trigger {
   width: 100%;
-  padding: 0;
+  padding: 4px 0 0;
   border: 0;
   background: transparent;
   color: inherit;
@@ -632,6 +754,18 @@ onBeforeUnmount(() => {
   min-width: 0;
   font-size: 0.97rem;
   line-height: 1.45;
+}
+
+.note-trigger-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 82px;
+}
+
+.note-trigger-content span {
+  display: block;
+  color: #fff7e7;
 }
 
 .note-select-caret {
@@ -695,29 +829,44 @@ onBeforeUnmount(() => {
 }
 
 .note-sheet-current {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   color: rgba(246, 237, 216, 0.72);
   font-size: 0.92rem;
+  flex-wrap: nowrap;
+  min-height: 92px;
+}
+
+.note-sheet-current strong {
+  color: #f6edd8;
 }
 
 .note-select-popup {
   min-height: 0;
   overflow-y: auto;
-  padding-right: 4px;
+  overflow-x: hidden;
+  padding: 2px 4px 2px 2px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  box-sizing: border-box;
 }
 
 .note-option {
-  padding: 12px 10px;
+  padding: 16px 10px;
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.03);
-  color: #f6edd8;
-  display: grid;
-  gap: 6px;
-  align-content: start;
+  color: #fff6e8;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   text-align: left;
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  min-height: 168px;
   transition:
     transform 140ms ease,
     border-color 140ms ease,
@@ -733,19 +882,45 @@ onBeforeUnmount(() => {
 .note-option.active {
   border-color: rgba(223, 172, 83, 0.58);
   background: rgba(223, 172, 83, 0.14);
-}
-
-.note-option-symbol {
-  color: #dfac53;
-  font-size: 1.2rem;
-  letter-spacing: 0.08em;
-  line-height: 1;
+  color: #fffbed;
 }
 
 .note-option-label {
+  display: block;
+  flex: 1;
+  min-width: 0;
   font-size: 0.78rem;
   line-height: 1.45;
   color: rgba(246, 237, 216, 0.86);
+  white-space: nowrap;
+}
+
+.note-glyph {
+  flex: none;
+  color: #fff8ee;
+  width: 148px;
+  height: 82px;
+}
+
+.note-glyph-compact {
+  width: 76px;
+  height: 44px;
+}
+
+.note-glyph-current {
+  width: 126px;
+  height: 76px;
+}
+
+.note-glyph-option {
+  width: 176px;
+  height: 98px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: 20px;
+  box-sizing: border-box;
+  margin-bottom: 0;
 }
 
 .preset-list {
