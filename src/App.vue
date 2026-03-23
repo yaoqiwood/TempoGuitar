@@ -27,8 +27,6 @@ const soundPack = ref("Studio Click");
 const accentPattern = ref("强-弱-弱-弱");
 const subdivisionMenuOpen = ref(false);
 const selectedSubdivisionId = ref<NoteSubdivisionId>(subdivisionOptions[0].id);
-const noteGlyphScaleAdjust = -0.4;
-
 const showSplash = ref(true);
 
 const quickPresets = [
@@ -265,13 +263,12 @@ onBeforeUnmount(() => {
         <div class="meter-display">
           <div class="display-top">
             <span class="tag">{{ timeSignature }}</span>
-            <span class="tag note-tag">
+            <span class="tag app-note-tag">
               <NotationGlyph
-                class="note-glyph note-glyph-compact"
+                class="app-note-glyph app-note-glyph-compact"
                 :variant="selectedSubdivision.id"
                 :width="68"
                 :height="40"
-                :scale-adjust="noteGlyphScaleAdjust"
               />
               <span>{{ selectedSubdivision.shortLabel }}</span>
             </span>
@@ -332,13 +329,12 @@ onBeforeUnmount(() => {
                   type="button"
                   @click="toggleSubdivisionMenu"
                 >
-                  <strong class="note-trigger-content">
+                  <strong class="app-note-trigger-content">
                     <NotationGlyph
-                      class="note-glyph"
+                      class="app-note-glyph"
                       :variant="selectedSubdivision.id"
                       :width="132"
                       :height="72"
-                      :scale-adjust="noteGlyphScaleAdjust"
                     />
                     <span>{{ subdivisionDisplay }}</span>
                   </strong>
@@ -390,7 +386,6 @@ onBeforeUnmount(() => {
     :current-subdivision-id="selectedSubdivision.id"
     :current-subdivision-label="subdivisionDisplay"
     :options="subdivisionOptions"
-    :glyph-scale-adjust="noteGlyphScaleAdjust"
     @close="closeSubdivisionMenu"
     @select="selectSubdivision"
   />
@@ -495,7 +490,7 @@ onBeforeUnmount(() => {
   font-size: 0.9rem;
 }
 
-.note-tag {
+.app-note-tag {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -723,17 +718,19 @@ onBeforeUnmount(() => {
   line-height: 1.45;
 }
 
-.note-trigger-content {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.app-note-trigger-content {
+  display: grid;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  align-content: center;
+  gap: 8px;
   min-height: 82px;
 }
 
-.note-trigger-content span {
-  display: flex;
-  align-items: center;
-  white-space: nowrap;
+.app-note-trigger-content span {
+  display: block;
+  text-align: center;
+  white-space: normal;
   color: #fff7e7;
 }
 
@@ -742,14 +739,14 @@ onBeforeUnmount(() => {
   font-size: 0.76rem;
 }
 
-.note-glyph {
+.app-note-glyph {
   flex: none;
   color: #fff8ee;
   width: 148px;
   height: 82px;
 }
 
-.note-glyph-compact {
+.app-note-glyph-compact {
   width: 76px;
   height: 44px;
 }

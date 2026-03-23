@@ -10,7 +10,6 @@ defineProps<{
   currentSubdivisionId: NoteSubdivisionId;
   currentSubdivisionLabel: string;
   options: NoteSubdivisionOption[];
-  glyphScaleAdjust?: number;
 }>();
 
 const emit = defineEmits<{
@@ -21,11 +20,7 @@ const emit = defineEmits<{
 
 <template>
   <Transition name="sheet-fade">
-    <div
-      v-if="open"
-      class="note-sheet-overlay"
-      @click.self="emit('close')"
-    >
+    <div v-if="open" class="note-sheet-overlay" @click.self="emit('close')">
       <Transition name="note-sheet">
         <section v-if="open" class="note-sheet-panel">
           <div class="note-sheet-header">
@@ -49,12 +44,11 @@ const emit = defineEmits<{
               :variant="currentSubdivisionId"
               :width="112"
               :height="62"
-              :scale-adjust="glyphScaleAdjust"
             />
             <strong>{{ currentSubdivisionLabel }}</strong>
           </div>
 
-          <div class="note-select-popup">
+          <div class="sheet-options-grid">
             <button
               v-for="option in options"
               :key="option.id"
@@ -71,8 +65,7 @@ const emit = defineEmits<{
                 class="note-glyph note-glyph-option"
                 :variant="option.id"
                 :width="176"
-                :height="92"
-                :scale-adjust="glyphScaleAdjust"
+                :height="64"
               />
               <span class="note-option-label">{{ option.label }}</span>
             </button>
@@ -102,8 +95,11 @@ const emit = defineEmits<{
   padding: 20px 20px 24px;
   border-radius: 28px 28px 0 0;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background:
-    linear-gradient(180deg, rgba(31, 26, 20, 0.98), rgba(16, 13, 11, 0.99));
+  background: linear-gradient(
+    180deg,
+    rgba(31, 26, 20, 0.98),
+    rgba(16, 13, 11, 0.99)
+  );
   box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.32);
   display: grid;
   grid-template-rows: auto auto 1fr;
@@ -153,7 +149,7 @@ const emit = defineEmits<{
   color: #f6edd8;
 }
 
-.note-select-popup {
+.sheet-options-grid {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
@@ -162,6 +158,8 @@ const emit = defineEmits<{
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   box-sizing: border-box;
+  align-content: start;
+  justify-items: stretch;
 }
 
 .note-option {
@@ -170,12 +168,13 @@ const emit = defineEmits<{
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.03);
   color: #fff6e8;
-  display: grid;
-  grid-template-columns: 1fr;
-  align-content: center;
-  justify-items: center;
-  gap: 8px;
-  text-align: center;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  align-self: stretch;
+  gap: 12px;
+  text-align: left;
   min-width: 0;
   overflow: hidden;
   box-sizing: border-box;
@@ -184,6 +183,10 @@ const emit = defineEmits<{
     transform 140ms ease,
     border-color 140ms ease,
     background-color 140ms ease;
+}
+
+.note-option > * {
+  flex: 0 0 auto;
 }
 
 .note-option:hover {
@@ -200,13 +203,15 @@ const emit = defineEmits<{
 
 .note-option-label {
   display: block;
-  width: 100%;
+  width: auto;
+  flex: 1;
   min-width: 0;
   font-size: 0.78rem;
   line-height: 1.45;
   color: rgba(246, 237, 216, 0.86);
-  white-space: normal;
-  text-align: center;
+  white-space: nowrap;
+  text-align: left;
+  order: 1;
 }
 
 .note-glyph {
@@ -222,14 +227,15 @@ const emit = defineEmits<{
 }
 
 .note-glyph-option {
-  width: 176px;
-  height: 98px;
+  width: 148px;
+  height: 64px;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  padding-left: 20px;
+  justify-content: center;
+  padding-left: 0;
   box-sizing: border-box;
   margin-bottom: 0;
+  order: 0;
 }
 
 .sheet-fade-enter-active,
@@ -256,7 +262,7 @@ const emit = defineEmits<{
 }
 
 @media (max-width: 640px) {
-  .note-select-popup {
+  .sheet-options-grid {
     grid-template-columns: 1fr;
   }
 

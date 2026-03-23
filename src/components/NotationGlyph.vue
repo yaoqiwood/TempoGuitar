@@ -1,350 +1,65 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
-import {
-  Beam,
-  Formatter,
-  Fraction,
-  Renderer,
-  Stave,
-  StaveNote,
-  Tuplet,
-  Voice,
-} from "vexflow";
-
-type NotationVariant =
-  | "quarter"
-  | "eighth"
-  | "eighth-triplet"
-  | "eighth-triplet-rest"
-  | "sixteenth"
-  | "sixteenth-rest";
+import { computed } from "vue";
+import type { NoteSubdivisionId } from "../types/subdivision";
+import quarterPng from "../assets/notation/quarter.png";
+import eighthPng from "../assets/notation/eighth.png";
+import eighthTripletPng from "../assets/notation/eighth-triplet.png";
+import eighthTripletRestPng from "../assets/notation/eighth-triplet-rest.png";
+import sixteenthPng from "../assets/notation/sixteenth.png";
+import sixteenthRestPng from "../assets/notation/sixteenth-rest.png";
 
 const props = withDefaults(
   defineProps<{
-    variant: NotationVariant;
+    variant: NoteSubdivisionId;
     width?: number;
     height?: number;
-    scaleAdjust?: number;
   }>(),
   {
     width: 96,
     height: 56,
-    scaleAdjust: 0,
   },
 );
 
-const host = ref<HTMLDivElement | null>(null);
-let renderVersion = 0;
-
-type Box = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+const glyphSources: Record<NoteSubdivisionId, string> = {
+  quarter: quarterPng,
+  eighth: eighthPng,
+  "eighth-triplet": eighthTripletPng,
+  "eighth-triplet-rest": eighthTripletRestPng,
+  sixteenth: sixteenthPng,
+  "sixteenth-rest": sixteenthRestPng,
 };
 
-function getScaleFactor() {
-  const baseScaleFactor = (() => {
-    switch (props.variant) {
-      case "quarter":
-        return 2.4;
-      case "eighth":
-        return 2.2;
-      case "eighth-triplet":
-      case "eighth-triplet-rest":
-        return 2.1;
-      case "sixteenth":
-      case "sixteenth-rest":
-        return 2;
-      default:
-        return 2.1;
-    }
-  })();
-
-  return Math.max(0.6, baseScaleFactor + props.scaleAdjust);
-}
-
-function createQuarterNote() {
-  return [new StaveNote({ keys: ["b/4"], duration: "4", stemDirection: 1 })];
-}
-
-function createEighthNotes() {
-  return [
-    new StaveNote({ keys: ["b/4"], duration: "8", stemDirection: 1 }),
-    new StaveNote({ keys: ["b/4"], duration: "8", stemDirection: 1 }),
-  ];
-}
-
-function createTripletNotes(withRest: boolean) {
-  return [
-    new StaveNote({ keys: ["b/4"], duration: "8", stemDirection: 1 }),
-    new StaveNote({
-      keys: [withRest ? "b/4" : "b/4"],
-      duration: withRest ? "8r" : "8",
-      stemDirection: 1,
-    }),
-    new StaveNote({ keys: ["b/4"], duration: "8", stemDirection: 1 }),
-  ];
-}
-
-function createSixteenthNotes(withRests: boolean) {
-  return [
-    new StaveNote({ keys: ["b/4"], duration: "16", stemDirection: 1 }),
-    new StaveNote({
-      keys: ["b/4"],
-      duration: withRests ? "16r" : "16",
-      stemDirection: 1,
-    }),
-    new StaveNote({
-      keys: ["b/4"],
-      duration: withRests ? "16r" : "16",
-      stemDirection: 1,
-    }),
-    new StaveNote({ keys: ["b/4"], duration: "16", stemDirection: 1 }),
-  ];
-}
-
-function createNotation() {
-  switch (props.variant) {
-    case "quarter":
-      return {
-        notes: createQuarterNote(),
-        beams: [] as Beam[],
-        tuplet: null as Tuplet | null,
-      };
-    case "eighth": {
-      const notes = createEighthNotes();
-
-      return {
-        notes,
-        beams: Beam.generateBeams(notes, {
-          groups: [new Fraction(1, 4)],
-          stemDirection: 1,
-        }),
-        tuplet: null as Tuplet | null,
-      };
-    }
-    case "eighth-triplet":
-    case "eighth-triplet-rest": {
-      const notes = createTripletNotes(props.variant === "eighth-triplet-rest");
-
-      return {
-        notes,
-        beams: Beam.generateBeams(notes, {
-          groups: [new Fraction(3, 8)],
-          beamRests: props.variant === "eighth-triplet-rest",
-          beamMiddleOnly: true,
-          showStemlets: props.variant === "eighth-triplet-rest",
-          stemDirection: 1,
-        }),
-        tuplet: new Tuplet(notes, {
-          numNotes: 3,
-          notesOccupied: 2,
-          bracketed: true,
-        }),
-      };
-    }
-    case "sixteenth":
-    case "sixteenth-rest": {
-      const notes = createSixteenthNotes(props.variant === "sixteenth-rest");
-
-      return {
-        notes,
-        beams: Beam.generateBeams(notes, {
-          groups: [new Fraction(1, 4)],
-          beamRests: props.variant === "sixteenth-rest",
-          beamMiddleOnly: true,
-          showStemlets: props.variant === "sixteenth-rest",
-          stemDirection: 1,
-        }),
-        tuplet: null as Tuplet | null,
-      };
-    }
-    default:
-      return {
-        notes: createQuarterNote(),
-        beams: [] as Beam[],
-        tuplet: null as Tuplet | null,
-      };
-  }
-}
-
-function mergeBoxes(...boxes: Box[]) {
-  const left = Math.min(...boxes.map((box) => box.x));
-  const top = Math.min(...boxes.map((box) => box.y));
-  const right = Math.max(...boxes.map((box) => box.x + box.width));
-  const bottom = Math.max(...boxes.map((box) => box.y + box.height));
-
-  return {
-    x: left,
-    y: top,
-    width: right - left,
-    height: bottom - top,
-  };
-}
-
-async function renderNotation() {
-  const currentVersion = ++renderVersion;
-
-  if ("fonts" in document) {
-    await document.fonts.ready;
-  }
-
-  if (currentVersion !== renderVersion || !host.value) {
-    return;
-  }
-
-  host.value.replaceChildren();
-
-  const renderer = new Renderer(host.value, Renderer.Backends.SVG);
-  renderer.resize(props.width, props.height);
-
-  const context = renderer.getContext();
-  const stave = new Stave(2, 12, props.width - 4, {
-    leftBar: false,
-    rightBar: false,
-    spaceAboveStaffLn: 0,
-    spaceBelowStaffLn: 0,
-    spacingBetweenLinesPx: 8,
-  });
-
-  stave.setContext(context);
-  stave.setConfigForLines(
-    Array.from({ length: 5 }, () => ({
-      visible: false,
-    })),
-  );
-  stave.setNoteStartX(10);
-
-  const { notes, beams, tuplet } = createNotation();
-  const voice = new Voice({
-    numBeats: 4,
-    beatValue: 4,
-  });
-
-  voice.setMode(Voice.Mode.SOFT);
-  voice.addTickables(notes);
-
-  notes.forEach((note) => note.setStave(stave));
-
-  new Formatter().joinVoices([voice]).formatToStave([voice], stave);
-  voice.draw(context, stave);
-
-  beams.forEach((beam) => {
-    beam.setContext(context).draw();
-  });
-
-  if (tuplet) {
-    tuplet.setContext(context).draw();
-  }
-
-  const svg = host.value.querySelector("svg");
-
-  if (svg) {
-    const scaleFactor = getScaleFactor();
-    const contentBox = svg.getBBox();
-    const noteheadBoxes = Array.from(
-      svg.querySelectorAll<SVGGElement>(".vf-notehead"),
-    )
-      .map((element) => element.getBBox())
-      .filter((box) => box.width > 0 && box.height > 0);
-    const measuredBox =
-      noteheadBoxes.length > 0 ? mergeBoxes(contentBox, ...noteheadBoxes) : contentBox;
-    const paddingLeft = props.variant === "quarter" ? 16 : 14;
-    const paddingRight = props.variant === "quarter" ? 12 : 10;
-    const paddingTop = props.variant.includes("triplet") ? 10 : 6;
-    const paddingBottom = props.variant === "quarter" ? 10 : 8;
-    const baseViewBoxX = measuredBox.x - paddingLeft;
-    const baseViewBoxY = measuredBox.y - paddingTop;
-    const baseViewBoxWidth = Math.max(
-      1,
-      measuredBox.width + paddingLeft + paddingRight,
-    );
-    const baseViewBoxHeight = Math.max(
-      1,
-      measuredBox.height + paddingTop + paddingBottom,
-    );
-
-    const viewBoxWidth = baseViewBoxWidth / scaleFactor;
-    const viewBoxHeight = baseViewBoxHeight / scaleFactor;
-    const viewBoxX =
-      baseViewBoxX + (baseViewBoxWidth - viewBoxWidth) / 2;
-    const viewBoxY =
-      baseViewBoxY + (baseViewBoxHeight - viewBoxHeight) / 2;
-
-    svg.setAttribute(
-      "viewBox",
-      `${viewBoxX} ${viewBoxY} ${viewBoxWidth} ${viewBoxHeight}`,
-    );
-    svg.setAttribute("width", String(props.width));
-    svg.setAttribute("height", String(props.height));
-    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
-    svg.classList.add("notation-svg");
-  }
-}
-
-onMounted(() => {
-  void renderNotation();
-});
-
-watch(
-  () => [props.variant, props.width, props.height, props.scaleAdjust],
-  () => {
-    void renderNotation();
-  },
-);
-
-onBeforeUnmount(() => {
-  renderVersion += 1;
-});
+const glyphSrc = computed(() => glyphSources[props.variant]);
+const hostStyle = computed(() => ({
+  width: `${props.width}px`,
+  height: `${props.height}px`,
+}));
 </script>
 
 <template>
-  <div ref="host" class="notation-glyph" aria-hidden="true"></div>
+  <span class="notation-glyph" :style="hostStyle" aria-hidden="true">
+    <img class="notation-glyph-image" :src="glyphSrc" alt="" draggable="false" />
+  </span>
 </template>
 
 <style scoped>
 .notation-glyph {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   line-height: 0;
-  color: currentColor;
-  width: 100%;
-  height: 100%;
   box-sizing: border-box;
+  flex: none;
+  overflow: visible;
 }
 
-:deep(.notation-svg) {
+.notation-glyph-image {
   display: block;
   width: 100%;
   height: 100%;
-  max-width: none;
-  max-height: none;
-  flex: none;
-}
-
-:deep(.notation-svg .vf-notehead),
-:deep(.notation-svg .vf-notehead path),
-:deep(.notation-svg .vf-stem),
-:deep(.notation-svg .vf-stem path),
-:deep(.notation-svg .vf-beam),
-:deep(.notation-svg .vf-beam path),
-:deep(.notation-svg .vf-stavenote),
-:deep(.notation-svg .vf-stavenote path),
-:deep(.notation-svg .vf-stavenote g),
-:deep(.notation-svg .vf-tuplet),
-:deep(.notation-svg .vf-tuplet path),
-:deep(.notation-svg text) {
-  fill: currentColor !important;
-  stroke: currentColor !important;
-}
-
-:deep(.notation-svg .vf-stem),
-:deep(.notation-svg .vf-stem path),
-:deep(.notation-svg .vf-beam),
-:deep(.notation-svg .vf-beam path),
-:deep(.notation-svg .vf-tuplet path) {
-  stroke-width: 1.2px;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 </style>
