@@ -15,7 +15,7 @@ export type SoundPackOption = {
 export const soundPackOptions: SoundPackOption[] = [
   {
     id: "studio-click",
-    label: "录音室点击",
+    label: "录音室点击音",
     subtitle: "清晰干净的数字点击音，重音分明",
     previewLine: "滴 哒 滴 哒",
   },
