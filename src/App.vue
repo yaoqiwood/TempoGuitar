@@ -1,23 +1,37 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import NotationGlyph from "./components/NotationGlyph.vue";
+import SoundPickerSheet from "./components/SoundPickerSheet.vue";
 import SplashIntro from "./components/SplashIntro.vue";
 import SubdivisionPickerSheet from "./components/SubdivisionPickerSheet.vue";
+import TimeSignaturePickerSheet from "./components/TimeSignaturePickerSheet.vue";
 import { useMetronomeEngine } from "./composables/useMetronomeEngine";
+import { soundPackOptions, type SoundPackId } from "./types/sound-pack";
+import {
+  timeSignatureOptions,
+  type TimeSignatureId,
+} from "./types/time-signature";
 import {
   subdivisionOptions,
   type NoteSubdivisionId,
 } from "./types/subdivision";
 
 const bpm = ref(96);
-const beatsPerMeasure = 4;
-
-const timeSignature = ref("4/4");
-const soundPack = ref("Studio Click");
+const timeSignatureMenuOpen = ref(false);
+const soundMenuOpen = ref(false);
+const selectedSoundPackId = ref<SoundPackId>(soundPackOptions[0].id);
+const selectedTimeSignatureId = ref<TimeSignatureId>("4/4");
 const accentPattern = ref("强-弱-弱-弱");
 const subdivisionMenuOpen = ref(false);
 const selectedSubdivisionId = ref<NoteSubdivisionId>(subdivisionOptions[0].id);
 const showSplash = ref(true);
+const selectedTimeSignature = computed(
+  () =>
+    timeSignatureOptions.find(
+      (option) => option.id === selectedTimeSignatureId.value,
+    ) ?? timeSignatureOptions[0],
+);
+const beatsPerMeasure = computed(() => selectedTimeSignature.value.numerator);
 
 const {
   currentBeat,
@@ -29,6 +43,7 @@ const {
 } = useMetronomeEngine({
   bpm,
   selectedSubdivisionId,
+  selectedSoundPackId,
   beatsPerMeasure,
 });
 
@@ -39,7 +54,7 @@ const quickPresets = [
 ];
 
 const beatDots = computed(() =>
-  Array.from({ length: beatsPerMeasure }, (_, index) => ({
+  Array.from({ length: beatsPerMeasure.value }, (_, index) => ({
     id: index,
     active: index === currentBeat.value,
   })),
@@ -51,8 +66,15 @@ const selectedSubdivision = computed(
       (option) => option.id === selectedSubdivisionId.value,
     ) ?? subdivisionOptions[0],
 );
+const selectedSoundPack = computed(
+  () =>
+    soundPackOptions.find((option) => option.id === selectedSoundPackId.value) ??
+    soundPackOptions[0],
+);
 
 const subdivisionDisplay = computed(() => selectedSubdivision.value.label);
+const soundPackDisplay = computed(() => selectedSoundPack.value.label);
+const timeSignatureDisplay = computed(() => selectedTimeSignature.value.label);
 const subdivisionGlowPalette: Record<
   NoteSubdivisionId,
   {
@@ -121,6 +143,19 @@ function applyPreset(nextBpm: number) {
   bpm.value = nextBpm;
 }
 
+function toggleTimeSignatureMenu() {
+  timeSignatureMenuOpen.value = !timeSignatureMenuOpen.value;
+}
+
+function closeTimeSignatureMenu() {
+  timeSignatureMenuOpen.value = false;
+}
+
+function selectTimeSignature(optionId: TimeSignatureId) {
+  selectedTimeSignatureId.value = optionId;
+  timeSignatureMenuOpen.value = false;
+}
+
 function toggleSubdivisionMenu() {
   subdivisionMenuOpen.value = !subdivisionMenuOpen.value;
 }
@@ -136,6 +171,19 @@ function selectSubdivision(optionId: NoteSubdivisionId) {
   if (!isPlaying.value) {
     syncSubdivisionNow();
   }
+}
+
+function toggleSoundMenu() {
+  soundMenuOpen.value = !soundMenuOpen.value;
+}
+
+function closeSoundMenu() {
+  soundMenuOpen.value = false;
+}
+
+function selectSoundPack(optionId: SoundPackId) {
+  selectedSoundPackId.value = optionId;
+  soundMenuOpen.value = false;
 }
 
 onMounted(() => {
@@ -163,7 +211,7 @@ onBeforeUnmount(() => {
       <section v-else class="meter-stage">
         <div class="meter-display">
           <div class="display-top">
-            <span class="tag tag-strong">{{ timeSignature }}</span>
+            <span class="tag tag-strong">{{ timeSignatureDisplay }}</span>
             <span class="tag app-note-tag">
               <NotationGlyph
                 class="app-note-glyph app-note-glyph-compact"
@@ -229,9 +277,20 @@ onBeforeUnmount(() => {
             <div class="setting-grid">
               <div class="setting-card setting-card-highlight">
                 <span class="setting-label">拍号</span>
-                <strong class="setting-value setting-value-emphasis">{{
-                  timeSignature
-                }}</strong>
+                <button
+                  class="note-select-trigger"
+                  type="button"
+                  @click="toggleTimeSignatureMenu"
+                >
+                  <strong class="signature-trigger-content">
+                    <span class="signature-trigger-title">{{
+                      timeSignatureDisplay
+                    }}</span>
+                  </strong>
+                  <span class="note-select-caret">{{
+                    timeSignatureMenuOpen ? "^" : "v"
+                  }}</span>
+                </button>
               </div>
               <div class="setting-card note-setting-card">
                 <span class="setting-label">音符</span>
@@ -250,13 +309,27 @@ onBeforeUnmount(() => {
                     <span>{{ subdivisionDisplay }}</span>
                   </strong>
                   <span class="note-select-caret">{{
-                    subdivisionMenuOpen ? "▲" : "▼"
+                    subdivisionMenuOpen ? "^" : "v"
                   }}</span>
                 </button>
               </div>
               <div class="setting-card setting-card-highlight">
                 <span class="setting-label">音色</span>
-                <strong class="setting-value">{{ soundPack }}</strong>
+                <button
+                  class="note-select-trigger"
+                  type="button"
+                  @click="toggleSoundMenu"
+                >
+                  <strong class="sound-trigger-content">
+                    <span class="sound-trigger-title">{{ soundPackDisplay }}</span>
+                    <span class="sound-trigger-preview">{{
+                      selectedSoundPack.previewLine
+                    }}</span>
+                  </strong>
+                  <span class="note-select-caret">{{
+                    soundMenuOpen ? "^" : "v"
+                  }}</span>
+                </button>
               </div>
               <div class="setting-card setting-card-highlight">
                 <span class="setting-label">重音</span>
@@ -292,6 +365,15 @@ onBeforeUnmount(() => {
     </Transition>
   </main>
 
+  <TimeSignaturePickerSheet
+    :open="timeSignatureMenuOpen"
+    :current-time-signature-id="selectedTimeSignature.id"
+    :current-time-signature-label="timeSignatureDisplay"
+    :options="timeSignatureOptions"
+    @close="closeTimeSignatureMenu"
+    @select="selectTimeSignature"
+  />
+
   <SubdivisionPickerSheet
     :open="subdivisionMenuOpen"
     :current-subdivision-id="selectedSubdivision.id"
@@ -299,6 +381,15 @@ onBeforeUnmount(() => {
     :options="subdivisionOptions"
     @close="closeSubdivisionMenu"
     @select="selectSubdivision"
+  />
+
+  <SoundPickerSheet
+    :open="soundMenuOpen"
+    :current-sound-pack-id="selectedSoundPack.id"
+    :current-sound-pack-label="soundPackDisplay"
+    :options="soundPackOptions"
+    @close="closeSoundMenu"
+    @select="selectSoundPack"
   />
 </template>
 
@@ -359,13 +450,17 @@ onBeforeUnmount(() => {
   padding: 16px;
   display: grid;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .meter-stage {
   width: min(1120px, 100%);
-  height: 100%;
+  min-height: 100%;
   margin: 0 auto;
+  padding-top: 2px;
+  padding-bottom: 6px;
+  box-sizing: border-box;
   display: grid;
   gap: 16px;
   align-content: center;
@@ -786,6 +881,37 @@ onBeforeUnmount(() => {
   text-align: center;
   white-space: normal;
   color: #fff7e7;
+}
+
+.signature-trigger-content {
+  display: grid;
+  min-height: 62px;
+  align-content: center;
+}
+
+.signature-trigger-title {
+  color: #fff7e7;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.sound-trigger-content {
+  display: grid;
+  gap: 6px;
+  min-height: 62px;
+  align-content: center;
+}
+
+.sound-trigger-title {
+  color: #fff7e7;
+  font-size: 1rem;
+}
+
+.sound-trigger-preview {
+  color: rgba(246, 237, 216, 0.72);
+  font-size: 0.74rem;
+  line-height: 1.4;
 }
 
 .note-select-caret {
