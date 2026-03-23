@@ -1,25 +1,15 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import NotationGlyph from "./components/NotationGlyph.vue";
 import SplashIntro from "./components/SplashIntro.vue";
 import SubdivisionPickerSheet from "./components/SubdivisionPickerSheet.vue";
+import { useMetronomeEngine } from "./composables/useMetronomeEngine";
 import {
   subdivisionOptions,
-  subdivisionPatterns,
   type NoteSubdivisionId,
 } from "./types/subdivision";
 
-type PulseMeta = {
-  beat: number;
-  pulseInBeat: number;
-  isActivePulse: boolean;
-  isBeatStart: boolean;
-  isMeasureStart: boolean;
-};
-
 const bpm = ref(96);
-const isPlaying = ref(false);
-const currentBeat = ref<number | null>(null);
 const beatsPerMeasure = 4;
 
 const timeSignature = ref("4/4");
@@ -28,6 +18,19 @@ const accentPattern = ref("强-弱-弱-弱");
 const subdivisionMenuOpen = ref(false);
 const selectedSubdivisionId = ref<NoteSubdivisionId>(subdivisionOptions[0].id);
 const showSplash = ref(true);
+
+const {
+  currentBeat,
+  glowPulseActive,
+  isPlaying,
+  syncSubdivisionNow,
+  togglePlayback,
+  warmupAudioContext,
+} = useMetronomeEngine({
+  bpm,
+  selectedSubdivisionId,
+  beatsPerMeasure,
+});
 
 const quickPresets = [
   { label: "热身", bpm: 72, detail: "舒展手指，慢速进入练习状态" },
@@ -50,9 +53,6 @@ const selectedSubdivision = computed(
 );
 
 const subdivisionDisplay = computed(() => selectedSubdivision.value.label);
-const activeSubdivisionPattern = computed(
-  () => subdivisionPatterns[selectedSubdivisionId.value],
-);
 const subdivisionGlowPalette: Record<
   NoteSubdivisionId,
   {
@@ -99,7 +99,6 @@ const subdivisionGlowPalette: Record<
     shadow: "rgba(50, 215, 75, 0.28)",
   },
 };
-const glowPulseActive = ref(false);
 
 const stageGlowStyle = computed(() => {
   const palette = subdivisionGlowPalette[selectedSubdivisionId.value];
@@ -113,171 +112,6 @@ const stageGlowStyle = computed(() => {
 });
 
 let splashHideTimer: ReturnType<typeof setTimeout> | undefined;
-let audioContext: AudioContext | null = null;
-let nextNoteTime = 0;
-let currentPulseIndex = 0;
-let schedulerTimer: ReturnType<typeof setInterval> | undefined;
-let glowPulseTimer: ReturnType<typeof setTimeout> | undefined;
-
-const lookahead = 25;
-const scheduleAheadTime = 0.1;
-
-function ensureAudioContext() {
-  if (!audioContext) {
-    audioContext = new window.AudioContext();
-  }
-
-  return audioContext;
-}
-
-async function warmupAudioContext() {
-  const context = ensureAudioContext();
-
-  if (context.state === "suspended") {
-    await context.resume();
-  }
-
-  return context;
-}
-
-function getSecondsPerPulse() {
-  return 60 / bpm.value / activeSubdivisionPattern.value.pulsesPerBeat;
-}
-
-function getPulseMeta(pulseIndex: number): PulseMeta {
-  const pattern = activeSubdivisionPattern.value;
-  const pulsesPerMeasure = beatsPerMeasure * pattern.pulsesPerBeat;
-  const normalizedPulseIndex =
-    ((pulseIndex % pulsesPerMeasure) + pulsesPerMeasure) % pulsesPerMeasure;
-  const beat = Math.floor(normalizedPulseIndex / pattern.pulsesPerBeat);
-  const pulseInBeat = normalizedPulseIndex % pattern.pulsesPerBeat;
-
-  return {
-    beat,
-    pulseInBeat,
-    isActivePulse: pattern.activePulseIndexes.includes(pulseInBeat),
-    isBeatStart: pulseInBeat === 0,
-    isMeasureStart: beat === 0 && pulseInBeat === 0,
-  };
-}
-
-function advancePulse() {
-  nextNoteTime += getSecondsPerPulse();
-  currentPulseIndex += 1;
-}
-
-function scheduleVisualBeat(beat: number, time: number) {
-  const context = ensureAudioContext();
-  const delay = Math.max(0, time - context.currentTime) * 1000;
-
-  window.setTimeout(() => {
-    currentBeat.value = beat;
-    triggerGlowPulse();
-  }, delay);
-}
-
-function triggerGlowPulse() {
-  glowPulseActive.value = false;
-
-  if (glowPulseTimer) {
-    clearTimeout(glowPulseTimer);
-  }
-
-  window.requestAnimationFrame(() => {
-    glowPulseActive.value = true;
-  });
-
-  glowPulseTimer = window.setTimeout(() => {
-    glowPulseActive.value = false;
-  }, 190);
-}
-
-function playClick(meta: PulseMeta, time: number) {
-  const context = ensureAudioContext();
-  const oscillator = context.createOscillator();
-  const gainNode = context.createGain();
-
-  oscillator.type = "triangle";
-  oscillator.frequency.setValueAtTime(
-    meta.isMeasureStart ? 1360 : meta.isBeatStart ? 1040 : 820,
-    time,
-  );
-
-  gainNode.gain.setValueAtTime(0.0001, time);
-  gainNode.gain.exponentialRampToValueAtTime(
-    meta.isMeasureStart ? 0.28 : meta.isBeatStart ? 0.2 : 0.12,
-    time + 0.004,
-  );
-  gainNode.gain.exponentialRampToValueAtTime(0.0001, time + 0.06);
-
-  oscillator.connect(gainNode);
-  gainNode.connect(context.destination);
-
-  oscillator.start(time);
-  oscillator.stop(time + 0.07);
-}
-
-function scheduleBeat() {
-  while (
-    audioContext &&
-    nextNoteTime < audioContext.currentTime + scheduleAheadTime
-  ) {
-    const meta = getPulseMeta(currentPulseIndex);
-
-    if (meta.isBeatStart) {
-      scheduleVisualBeat(meta.beat, nextNoteTime);
-    }
-
-    if (meta.isActivePulse) {
-      playClick(meta, nextNoteTime);
-    }
-
-    advancePulse();
-  }
-}
-
-async function startMetronome() {
-  const context = await warmupAudioContext();
-
-  currentPulseIndex = 0;
-  currentBeat.value = 0;
-  isPlaying.value = true;
-  triggerGlowPulse();
-
-  const startTime = context.currentTime;
-  playClick(getPulseMeta(0), startTime);
-  advancePulse();
-  nextNoteTime = startTime + getSecondsPerPulse();
-
-  scheduleBeat();
-  schedulerTimer = window.setInterval(scheduleBeat, lookahead);
-}
-
-function stopMetronome() {
-  if (schedulerTimer) {
-    clearInterval(schedulerTimer);
-    schedulerTimer = undefined;
-  }
-
-  if (glowPulseTimer) {
-    clearTimeout(glowPulseTimer);
-    glowPulseTimer = undefined;
-  }
-
-  isPlaying.value = false;
-  currentPulseIndex = 0;
-  currentBeat.value = null;
-  glowPulseActive.value = false;
-}
-
-async function togglePlayback() {
-  if (isPlaying.value) {
-    stopMetronome();
-    return;
-  }
-
-  await startMetronome();
-}
 
 function nudgeBpm(amount: number) {
   bpm.value = Math.min(240, Math.max(40, bpm.value + amount));
@@ -298,21 +132,11 @@ function closeSubdivisionMenu() {
 function selectSubdivision(optionId: NoteSubdivisionId) {
   selectedSubdivisionId.value = optionId;
   subdivisionMenuOpen.value = false;
+
+  if (!isPlaying.value) {
+    syncSubdivisionNow();
+  }
 }
-
-watch(bpm, () => {
-  if (isPlaying.value && audioContext) {
-    nextNoteTime = audioContext.currentTime + 0.06;
-  }
-});
-
-watch(selectedSubdivisionId, () => {
-  if (isPlaying.value && audioContext) {
-    currentPulseIndex = 0;
-    currentBeat.value = 0;
-    nextNoteTime = audioContext.currentTime + 0.06;
-  }
-});
 
 onMounted(() => {
   void warmupAudioContext().catch(() => {
@@ -327,12 +151,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (splashHideTimer) {
     clearTimeout(splashHideTimer);
-  }
-
-  stopMetronome();
-
-  if (audioContext) {
-    void audioContext.close();
   }
 });
 </script>
@@ -572,13 +390,18 @@ onBeforeUnmount(() => {
 .display-top {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
 }
 
 .tag {
-  min-height: 36px;
-  padding: 5px 10px;
+  --top-tag-height: 38px;
+  display: inline-flex;
+  height: var(--top-tag-height);
+  align-items: center;
+  justify-content: center;
+  min-height: var(--top-tag-height);
+  padding: 0 10px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
   color: rgba(246, 237, 216, 0.84);
@@ -596,6 +419,7 @@ onBeforeUnmount(() => {
 .app-note-tag {
   display: inline-flex;
   align-items: center;
+  height: var(--top-tag-height);
   gap: 6px;
   color: #fff7ea;
   padding-right: 12px;
