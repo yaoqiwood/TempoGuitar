@@ -170,14 +170,16 @@ const emit = defineEmits<{
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.03);
   color: #fff6e8;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  text-align: left;
+  display: grid;
+  grid-template-columns: 1fr;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
   min-width: 0;
   overflow: hidden;
   box-sizing: border-box;
-  min-height: 168px;
+  min-height: 100px;
   transition:
     transform 140ms ease,
     border-color 140ms ease,
@@ -198,12 +200,13 @@ const emit = defineEmits<{
 
 .note-option-label {
   display: block;
-  flex: 1;
+  width: 100%;
   min-width: 0;
   font-size: 0.78rem;
   line-height: 1.45;
   color: rgba(246, 237, 216, 0.86);
-  white-space: nowrap;
+  white-space: normal;
+  text-align: center;
 }
 
 .note-glyph {

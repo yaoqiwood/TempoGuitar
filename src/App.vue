@@ -731,7 +731,9 @@ onBeforeUnmount(() => {
 }
 
 .note-trigger-content span {
-  display: block;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
   color: #fff7e7;
 }
 

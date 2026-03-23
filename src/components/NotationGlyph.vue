@@ -36,6 +36,13 @@ const props = withDefaults(
 const host = ref<HTMLDivElement | null>(null);
 let renderVersion = 0;
 
+type Box = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 function getScaleFactor() {
   const baseScaleFactor = (() => {
     switch (props.variant) {
@@ -162,6 +169,20 @@ function createNotation() {
   }
 }
 
+function mergeBoxes(...boxes: Box[]) {
+  const left = Math.min(...boxes.map((box) => box.x));
+  const top = Math.min(...boxes.map((box) => box.y));
+  const right = Math.max(...boxes.map((box) => box.x + box.width));
+  const bottom = Math.max(...boxes.map((box) => box.y + box.height));
+
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  };
+}
+
 async function renderNotation() {
   const currentVersion = ++renderVersion;
 
@@ -222,20 +243,32 @@ async function renderNotation() {
   if (svg) {
     const scaleFactor = getScaleFactor();
     const contentBox = svg.getBBox();
-    const paddingX = props.variant === "quarter" ? 10 : 8;
+    const noteheadBoxes = Array.from(
+      svg.querySelectorAll<SVGGElement>(".vf-notehead"),
+    )
+      .map((element) => element.getBBox())
+      .filter((box) => box.width > 0 && box.height > 0);
+    const measuredBox =
+      noteheadBoxes.length > 0 ? mergeBoxes(contentBox, ...noteheadBoxes) : contentBox;
+    const paddingLeft = props.variant === "quarter" ? 16 : 14;
+    const paddingRight = props.variant === "quarter" ? 12 : 10;
     const paddingTop = props.variant.includes("triplet") ? 10 : 6;
-    const paddingBottom = 6;
-    const baseViewBoxX = contentBox.x - paddingX;
-    const baseViewBoxY = contentBox.y - paddingTop;
-    const baseViewBoxWidth = Math.max(1, contentBox.width + paddingX * 2);
+    const paddingBottom = props.variant === "quarter" ? 10 : 8;
+    const baseViewBoxX = measuredBox.x - paddingLeft;
+    const baseViewBoxY = measuredBox.y - paddingTop;
+    const baseViewBoxWidth = Math.max(
+      1,
+      measuredBox.width + paddingLeft + paddingRight,
+    );
     const baseViewBoxHeight = Math.max(
       1,
-      contentBox.height + paddingTop + paddingBottom,
+      measuredBox.height + paddingTop + paddingBottom,
     );
 
     const viewBoxWidth = baseViewBoxWidth / scaleFactor;
     const viewBoxHeight = baseViewBoxHeight / scaleFactor;
-    const viewBoxX = baseViewBoxX;
+    const viewBoxX =
+      baseViewBoxX + (baseViewBoxWidth - viewBoxWidth) / 2;
     const viewBoxY =
       baseViewBoxY + (baseViewBoxHeight - viewBoxHeight) / 2;
 
@@ -245,7 +278,7 @@ async function renderNotation() {
     );
     svg.setAttribute("width", String(props.width));
     svg.setAttribute("height", String(props.height));
-    svg.setAttribute("preserveAspectRatio", "xMinYMid meet");
+    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
     svg.classList.add("notation-svg");
   }
 }
