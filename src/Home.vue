@@ -28,6 +28,22 @@ const selectedSubdivisionId = ref<NoteSubdivisionId>(subdivisionOptions[0].id);
 const metronomeVolumePercent = ref(70);
 const metronomeVolume = computed(() => metronomeVolumePercent.value / 100);
 const showSplash = ref(true);
+const saveCurrentStateStatus = ref<"idle" | "saved" | "error">("idle");
+
+const SAVED_METRONOME_SETTINGS_KEY =
+  "tempoguitar:saved-metronome-settings:v1";
+const timeSignatureIdSet = new Set(timeSignatureOptions.map((option) => option.id));
+const subdivisionIdSet = new Set(subdivisionOptions.map((option) => option.id));
+const soundPackIdSet = new Set(soundPackOptions.map((option) => option.id));
+
+type SavedMetronomeSettings = {
+  bpm: number;
+  timeSignatureId: TimeSignatureId;
+  subdivisionId: NoteSubdivisionId;
+  soundPackId: SoundPackId;
+  metronomeVolumePercent: number;
+  savedAtIso: string;
+};
 const selectedTimeSignature = computed(
   () =>
     timeSignatureOptions.find(
@@ -148,6 +164,7 @@ const stageGlowStyle = computed(() => {
 });
 
 let splashHideTimer: ReturnType<typeof setTimeout> | undefined;
+let saveCurrentStateStatusTimer: ReturnType<typeof setTimeout> | undefined;
 const minBpm = 40;
 const maxBpm = 240;
 const bpmPerFullTurn = 80;
@@ -155,6 +172,17 @@ const isBpmDragging = ref(false);
 const isBpmDragReady = ref(false);
 const bpmProgress = computed(() => (bpm.value - minBpm) / (maxBpm - minBpm));
 const bpmDialAngle = computed(() => -90 + bpmProgress.value * 360);
+const saveCurrentStateLabel = computed(() => {
+  if (saveCurrentStateStatus.value === "saved") {
+    return "已保存";
+  }
+
+  if (saveCurrentStateStatus.value === "error") {
+    return "保存失败";
+  }
+
+  return "保存当前";
+});
 
 let dragPointerId: number | null = null;
 let dragLastAngle = 0;
@@ -162,6 +190,100 @@ let dragBpmAccumulator = 0;
 
 function clampBpm(value: number) {
   return Math.min(maxBpm, Math.max(minBpm, value));
+}
+
+function clampVolumePercent(value: number) {
+  return Math.min(100, Math.max(0, value));
+}
+
+function isTimeSignatureId(value: unknown): value is TimeSignatureId {
+  return typeof value === "string" && timeSignatureIdSet.has(value as TimeSignatureId);
+}
+
+function isSubdivisionId(value: unknown): value is NoteSubdivisionId {
+  return typeof value === "string" && subdivisionIdSet.has(value as NoteSubdivisionId);
+}
+
+function isSoundPackId(value: unknown): value is SoundPackId {
+  return typeof value === "string" && soundPackIdSet.has(value as SoundPackId);
+}
+
+function setSaveCurrentStateStatus(nextStatus: "idle" | "saved" | "error") {
+  saveCurrentStateStatus.value = nextStatus;
+
+  if (saveCurrentStateStatusTimer) {
+    clearTimeout(saveCurrentStateStatusTimer);
+    saveCurrentStateStatusTimer = undefined;
+  }
+
+  if (nextStatus === "idle") {
+    return;
+  }
+
+  saveCurrentStateStatusTimer = window.setTimeout(() => {
+    saveCurrentStateStatus.value = "idle";
+    saveCurrentStateStatusTimer = undefined;
+  }, 1800);
+}
+
+function saveCurrentMetronomeSettings() {
+  try {
+    const payload: SavedMetronomeSettings = {
+      bpm: bpm.value,
+      timeSignatureId: selectedTimeSignatureId.value,
+      subdivisionId: selectedSubdivisionId.value,
+      soundPackId: selectedSoundPackId.value,
+      metronomeVolumePercent: metronomeVolumePercent.value,
+      savedAtIso: new Date().toISOString(),
+    };
+
+    window.localStorage.setItem(
+      SAVED_METRONOME_SETTINGS_KEY,
+      JSON.stringify(payload),
+    );
+    setSaveCurrentStateStatus("saved");
+  } catch {
+    setSaveCurrentStateStatus("error");
+  }
+}
+
+function restoreSavedMetronomeSettings() {
+  const savedRaw = window.localStorage.getItem(SAVED_METRONOME_SETTINGS_KEY);
+
+  if (!savedRaw) {
+    return;
+  }
+
+  try {
+    const parsed: Partial<SavedMetronomeSettings> = JSON.parse(savedRaw);
+
+    if (typeof parsed.bpm === "number" && Number.isFinite(parsed.bpm)) {
+      bpm.value = clampBpm(Math.round(parsed.bpm));
+    }
+
+    if (isTimeSignatureId(parsed.timeSignatureId)) {
+      selectedTimeSignatureId.value = parsed.timeSignatureId;
+    }
+
+    if (isSubdivisionId(parsed.subdivisionId)) {
+      selectedSubdivisionId.value = parsed.subdivisionId;
+    }
+
+    if (isSoundPackId(parsed.soundPackId)) {
+      selectedSoundPackId.value = parsed.soundPackId;
+    }
+
+    if (
+      typeof parsed.metronomeVolumePercent === "number" &&
+      Number.isFinite(parsed.metronomeVolumePercent)
+    ) {
+      metronomeVolumePercent.value = clampVolumePercent(
+        Math.round(parsed.metronomeVolumePercent),
+      );
+    }
+  } catch {
+    window.localStorage.removeItem(SAVED_METRONOME_SETTINGS_KEY);
+  }
 }
 
 function getPointerAngle(event: PointerEvent, element: HTMLElement) {
@@ -313,6 +435,8 @@ function closeSettingsMenu() {
 }
 
 onMounted(() => {
+  restoreSavedMetronomeSettings();
+
   void warmupAudioContext().catch(() => {
     // Some runtimes still require a user gesture before audio can fully start.
   });
@@ -325,6 +449,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (splashHideTimer) {
     clearTimeout(splashHideTimer);
+  }
+
+  if (saveCurrentStateStatusTimer) {
+    clearTimeout(saveCurrentStateStatusTimer);
   }
 });
 </script>
@@ -347,14 +475,30 @@ onBeforeUnmount(() => {
               />
               <span>{{ selectedSubdivision.shortLabel }}</span>
             </span>
-            <button
-              class="settings-gear"
-              type="button"
-              aria-label="节拍器设置"
-              @click="toggleSettingsMenu"
-            >
-              ⚙
-            </button>
+            <div class="top-action-group">
+              <button
+                :class="[
+                  'quick-save-button',
+                  {
+                    'is-saved': saveCurrentStateStatus === 'saved',
+                    'is-error': saveCurrentStateStatus === 'error',
+                  },
+                ]"
+                type="button"
+                aria-label="保存当前节拍器参数"
+                @click="saveCurrentMetronomeSettings"
+              >
+                {{ saveCurrentStateLabel }}
+              </button>
+              <button
+                class="settings-gear"
+                type="button"
+                aria-label="节拍器设置"
+                @click="toggleSettingsMenu"
+              >
+                ⚙
+              </button>
+            </div>
           </div>
 
           <div class="bpm-block">
@@ -672,8 +816,45 @@ onBeforeUnmount(() => {
   gap: 6px;
 }
 
-.settings-gear {
+.top-action-group {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quick-save-button {
+  height: 38px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(246, 237, 216, 0.92);
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    transform 140ms ease;
+}
+
+.quick-save-button:hover {
+  background: rgba(223, 172, 83, 0.2);
+  transform: translateY(-1px);
+}
+
+.quick-save-button.is-saved {
+  background: rgba(83, 197, 123, 0.22);
+  color: #ccffd9;
+}
+
+.quick-save-button.is-error {
+  background: rgba(226, 84, 84, 0.24);
+  color: #ffd4d4;
+}
+
+.settings-gear {
   width: 38px;
   height: 38px;
   border: 0;
