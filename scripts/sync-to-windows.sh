@@ -69,9 +69,10 @@ if [[ ! -d "${DEST_DIR}" ]]; then
 fi
 
 RSYNC_ARGS=(
-  -a
+  -rlt
   --human-readable
   --itemize-changes
+  --omit-dir-times
   --exclude ".git/"
   --exclude ".codex"
   --exclude "node_modules/"
