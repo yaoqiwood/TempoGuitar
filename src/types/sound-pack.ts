@@ -2,7 +2,8 @@ export type SoundPackId =
   | "studio-click"
   | "wood-block"
   | "analog-pulse"
-  | "shaker-tick";
+  | "shaker-tick"
+  | "voice-count-female";
 
 export type SoundPackOption = {
   id: SoundPackId;
@@ -35,5 +36,11 @@ export const soundPackOptions: SoundPackOption[] = [
     label: "沙锤轻击",
     subtitle: "明亮轻盈的高频颗粒感点击音。",
     previewLine: "嘶 嘶 嘶 嘶",
+  },
+  {
+    id: "voice-count-female",
+    label: "女声数拍",
+    subtitle: "播放 one two three four。当前先支持 4 分音符。",
+    previewLine: "one two three four",
   },
 ];

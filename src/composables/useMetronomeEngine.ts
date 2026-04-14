@@ -4,6 +4,10 @@ import {
   type NoteSubdivisionId,
 } from "../types/subdivision";
 import type { SoundPackId } from "../types/sound-pack";
+import voiceCountOneUrl from "../assets/count-voice/equal/one.wav";
+import voiceCountTwoUrl from "../assets/count-voice/equal/two.wav";
+import voiceCountThreeUrl from "../assets/count-voice/equal/three.wav";
+import voiceCountFourUrl from "../assets/count-voice/equal/four.wav";
 
 type PulseMeta = {
   beat: number;
@@ -44,11 +48,20 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
   let currentPulseIndex = 0;
   let schedulerTimer: ReturnType<typeof setInterval> | undefined;
   let glowPulseTimer: ReturnType<typeof setTimeout> | undefined;
+  let voiceCountBuffersPromise: Promise<void> | null = null;
+  const voiceCountBuffers = new Map<number, AudioBuffer>();
 
   const lookahead = 25;
   const scheduleAheadTime = 0.1;
   const engineStartLeadTimeSeconds = 0.02;
   const metronomeLoudnessBoost = 1.58;
+  const voiceCountLeadInSeconds = 0.012;
+  const voiceCountClipUrls = new Map<number, string>([
+    [1, voiceCountOneUrl],
+    [2, voiceCountTwoUrl],
+    [3, voiceCountThreeUrl],
+    [4, voiceCountFourUrl],
+  ]);
 
   function getScheduleAheadTime() {
     return scheduleAheadTime;
@@ -70,11 +83,46 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
     return audioContext;
   }
 
+  function isVoiceCountSoundPack(soundPackId: SoundPackId) {
+    return soundPackId === "voice-count-female";
+  }
+
+  function getVoiceCountBeatNumber(beat: number) {
+    return (beat % 4) + 1;
+  }
+
+  async function ensureVoiceCountBuffersLoaded(context: AudioContext) {
+    if (voiceCountBuffers.size === voiceCountClipUrls.size) {
+      return;
+    }
+
+    if (!voiceCountBuffersPromise) {
+      voiceCountBuffersPromise = Promise.all(
+        Array.from(voiceCountClipUrls.entries()).map(async ([beat, clipUrl]) => {
+          const response = await fetch(clipUrl);
+          const clipArrayBuffer = await response.arrayBuffer();
+          const audioBuffer = await context.decodeAudioData(clipArrayBuffer);
+          voiceCountBuffers.set(beat, audioBuffer);
+        }),
+      )
+        .then(() => undefined)
+        .finally(() => {
+          voiceCountBuffersPromise = null;
+        });
+    }
+
+    await voiceCountBuffersPromise;
+  }
+
   async function warmupAudioContext() {
     const context = ensureAudioContext();
 
     if (context.state === "suspended") {
       await context.resume();
+    }
+
+    if (isVoiceCountSoundPack(selectedSoundPackId.value)) {
+      await ensureVoiceCountBuffersLoaded(context);
     }
 
     return context;
@@ -97,6 +145,12 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
 
   function syncSoundPackNow() {
     playbackSoundPackId.value = selectedSoundPackId.value;
+
+    if (audioContext && isVoiceCountSoundPack(playbackSoundPackId.value)) {
+      void ensureVoiceCountBuffersLoaded(audioContext).catch(() => {
+        // Keep the transport responsive even if the voice assets fail to load.
+      });
+    }
   }
 
   function getPulseMeta(pulseIndex: number): PulseMeta {
@@ -218,6 +272,42 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
     oscillator.stop(time + 0.12);
   }
 
+  function playVoiceCount(meta: PulseMeta, time: number) {
+    if (playbackSubdivisionId.value !== "quarter" || !meta.isBeatStart || !audioContext) {
+      return false;
+    }
+
+    const clipBeatNumber = getVoiceCountBeatNumber(meta.beat);
+    const clipBuffer = voiceCountBuffers.get(clipBeatNumber);
+
+    if (!clipBuffer) {
+      return false;
+    }
+
+    const sourceNode = audioContext.createBufferSource();
+    const gainNode = audioContext.createGain();
+
+    sourceNode.buffer = clipBuffer;
+    gainNode.gain.setValueAtTime(getMasterVolume(), time);
+
+    sourceNode.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    sourceNode.start(Math.max(audioContext.currentTime, time - voiceCountLeadInSeconds));
+    return true;
+  }
+
+  function playPulse(meta: PulseMeta, time: number) {
+    if (
+      isVoiceCountSoundPack(playbackSoundPackId.value) &&
+      playVoiceCount(meta, time)
+    ) {
+      return;
+    }
+
+    playClick(meta, time);
+  }
+
   function scheduleBeat() {
     while (
       audioContext &&
@@ -230,7 +320,7 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
       }
 
       if (meta.isActivePulse) {
-        playClick(meta, nextNoteTime);
+        playPulse(meta, nextNoteTime);
       }
 
       advancePulse();
@@ -240,6 +330,10 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
   async function startMetronome() {
     const context = await warmupAudioContext();
 
+    if (isVoiceCountSoundPack(playbackSoundPackId.value)) {
+      await ensureVoiceCountBuffersLoaded(context);
+    }
+
     syncSubdivisionNow();
     currentPulseIndex = 0;
     currentBeat.value = 0;
@@ -248,7 +342,7 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
     const startTime = context.currentTime + engineStartLeadTimeSeconds;
 
     scheduleVisualBeat(0, startTime);
-    playClick(getPulseMeta(0), startTime);
+    playPulse(getPulseMeta(0), startTime);
     advancePulse();
     nextNoteTime = startTime + getSecondsPerPulse();
 

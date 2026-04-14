@@ -1,0 +1,46 @@
+[
+  {
+    "key": "one",
+    "voice": "en-US-JennyNeural",
+    "text": "one",
+    "rate": "+44%",
+    "pitch": "+18Hz",
+    "sampleRate": 24000,
+    "targetDurationSeconds": 0.2,
+    "detectedOnsetSeconds": 0.1578,
+    "finalWavDurationSeconds": 0.2
+  },
+  {
+    "key": "two",
+    "voice": "en-US-JennyNeural",
+    "text": "two",
+    "rate": "+50%",
+    "pitch": "+18Hz",
+    "sampleRate": 24000,
+    "targetDurationSeconds": 0.2,
+    "detectedOnsetSeconds": 0.1488,
+    "finalWavDurationSeconds": 0.2
+  },
+  {
+    "key": "three",
+    "voice": "en-US-JennyNeural",
+    "text": "three",
+    "rate": "+96%",
+    "pitch": "+16Hz",
+    "sampleRate": 24000,
+    "targetDurationSeconds": 0.2,
+    "detectedOnsetSeconds": 0.1193,
+    "finalWavDurationSeconds": 0.2
+  },
+  {
+    "key": "four",
+    "voice": "en-US-JennyNeural",
+    "text": "four",
+    "rate": "+72%",
+    "pitch": "+16Hz",
+    "sampleRate": 24000,
+    "targetDurationSeconds": 0.2,
+    "detectedOnsetSeconds": 0.1967,
+    "finalWavDurationSeconds": 0.2
+  }
+]
