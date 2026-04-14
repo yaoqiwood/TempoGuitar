@@ -18,7 +18,6 @@ import {
 
 const DEFAULT_BPM = 96;
 const DEFAULT_TIME_SIGNATURE_ID: TimeSignatureId = "4/4";
-const DEFAULT_ACCENT_PATTERN = "强-弱-弱-弱";
 const DEFAULT_SUBDIVISION_ID: NoteSubdivisionId = subdivisionOptions[0].id;
 const DEFAULT_SOUND_PACK_ID: SoundPackId = soundPackOptions[0].id;
 const DEFAULT_METRONOME_VOLUME_PERCENT = 70;
@@ -30,9 +29,11 @@ const timeSignatureMenuOpen = ref(false);
 const soundMenuOpen = ref(false);
 const settingsMenuOpen = ref(false);
 const resetConfirmOpen = ref(false);
+const authorModalOpen = ref(false);
+const authorWechatQrImageAvailable = ref(true);
+const donationWechatPayImageAvailable = ref(true);
 const selectedSoundPackId = ref<SoundPackId>(DEFAULT_SOUND_PACK_ID);
 const selectedTimeSignatureId = ref<TimeSignatureId>(DEFAULT_TIME_SIGNATURE_ID);
-const accentPattern = ref(DEFAULT_ACCENT_PATTERN);
 const subdivisionMenuOpen = ref(false);
 const selectedSubdivisionId = ref<NoteSubdivisionId>(DEFAULT_SUBDIVISION_ID);
 const metronomeVolumePercent = ref(DEFAULT_METRONOME_VOLUME_PERCENT);
@@ -41,6 +42,8 @@ const metronomeVolume = computed(
 );
 const showSplash = ref(true);
 const saveCurrentStateStatus = ref<"idle" | "saved" | "error">("idle");
+const authorWechatQrImageUrl = "/author-wechat-qr.jpg";
+const donationWechatPayImageUrl = "/donation-wechat-pay.jpg";
 
 const SAVED_METRONOME_SETTINGS_KEY =
   "tempoguitar:saved-metronome-settings:v1";
@@ -113,6 +116,9 @@ const selectedSoundPack = computed(
     ) ?? soundPackOptions[0],
 );
 
+const accentPattern = computed(
+  () => selectedSubdivision.value.accentDescription,
+);
 const subdivisionDisplay = computed(() => selectedSubdivision.value.label);
 const soundPackDisplay = computed(() => selectedSoundPack.value.label);
 const timeSignatureDisplay = computed(() => selectedTimeSignature.value.label);
@@ -265,7 +271,6 @@ function applyFactoryDefaults() {
   selectedTimeSignatureId.value = DEFAULT_TIME_SIGNATURE_ID;
   selectedSubdivisionId.value = DEFAULT_SUBDIVISION_ID;
   selectedSoundPackId.value = DEFAULT_SOUND_PACK_ID;
-  accentPattern.value = DEFAULT_ACCENT_PATTERN;
   metronomeVolumePercent.value = DEFAULT_METRONOME_VOLUME_PERCENT;
 }
 
@@ -472,12 +477,14 @@ function toggleSettingsMenu() {
 
   if (!settingsMenuOpen.value) {
     resetConfirmOpen.value = false;
+    authorModalOpen.value = false;
   }
 }
 
 function closeSettingsMenu() {
   settingsMenuOpen.value = false;
   resetConfirmOpen.value = false;
+  authorModalOpen.value = false;
 }
 
 function openResetConfirm() {
@@ -491,6 +498,23 @@ function closeResetConfirm() {
 function confirmResetMetronomeSettings() {
   resetMetronomeSettings();
   resetConfirmOpen.value = false;
+}
+
+function openAuthorModal() {
+  authorModalOpen.value = true;
+  resetConfirmOpen.value = false;
+}
+
+function closeAuthorModal() {
+  authorModalOpen.value = false;
+}
+
+function handleAuthorWechatQrImageError() {
+  authorWechatQrImageAvailable.value = false;
+}
+
+function handleDonationWechatPayImageError() {
+  donationWechatPayImageAvailable.value = false;
 }
 
 onMounted(() => {
@@ -686,7 +710,7 @@ onBeforeUnmount(() => {
                 </button>
               </div>
               <div class="setting-card setting-card-highlight">
-                <span class="setting-label">重音</span>
+                <span class="setting-label">说明</span> 
                 <strong class="setting-value accent-pattern-value">{{
                   accentPattern
                 }}</strong>
@@ -759,6 +783,13 @@ onBeforeUnmount(() => {
           >
             恢复出厂设置
           </button>
+          <button
+            type="button"
+            class="settings-about-button"
+            @click="openAuthorModal"
+          >
+            关于作者
+          </button>
         </div>
 
         <Transition name="sheet-fade">
@@ -794,6 +825,63 @@ onBeforeUnmount(() => {
                 >
                   确认恢复
                 </button>
+              </div>
+            </section>
+          </div>
+        </Transition>
+
+        <Transition name="sheet-fade">
+          <div
+            v-if="authorModalOpen"
+            class="confirm-modal-overlay"
+            @click.self="closeAuthorModal"
+          >
+            <section
+              class="confirm-modal about-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="about-author-title"
+            >
+              <div class="about-modal-header">
+                <div>
+                  <h4 id="about-author-title" class="confirm-modal-title">
+                    关于作者
+                  </h4>
+                  <p class="about-modal-version">版本：V1.0</p>
+                </div>
+                <button
+                  type="button"
+                  class="about-modal-close"
+                  @click="closeAuthorModal"
+                >
+                  关闭
+                </button>
+              </div>
+
+              <div class="about-modal-body">
+                <section class="about-modal-section">
+                  <span class="about-modal-label">捐赠项目：</span>
+                  <img
+                    v-if="donationWechatPayImageAvailable"
+                    class="about-modal-image"
+                    :src="donationWechatPayImageUrl"
+                    alt="微信支付捐赠二维码"
+                    @error="handleDonationWechatPayImageError"
+                  />
+                  <div v-else class="about-modal-fallback">Mikko柴柴</div>
+                </section>
+
+                <section class="about-modal-section">
+                  <span class="about-modal-label">了解作者：</span>
+                  <img
+                    v-if="authorWechatQrImageAvailable"
+                    class="about-modal-image"
+                    :src="authorWechatQrImageUrl"
+                    alt="作者微信二维码"
+                    @error="handleAuthorWechatQrImageError"
+                  />
+                  <div v-else class="about-modal-fallback">Mikko柴柴</div>
+                </section>
               </div>
             </section>
           </div>
@@ -1092,6 +1180,24 @@ onBeforeUnmount(() => {
   transform: translateY(-1px);
 }
 
+.settings-about-button {
+  border: 0;
+  border-radius: 12px;
+  min-height: 44px;
+  padding: 0 14px;
+  background: rgba(223, 172, 83, 0.18);
+  color: #ffe9bf;
+  font-weight: 600;
+  transition:
+    background-color 140ms ease,
+    transform 140ms ease;
+}
+
+.settings-about-button:hover {
+  background: rgba(223, 172, 83, 0.28);
+  transform: translateY(-1px);
+}
+
 .confirm-modal-overlay {
   position: absolute;
   inset: 0;
@@ -1171,6 +1277,99 @@ onBeforeUnmount(() => {
 
 .confirm-modal-button-danger:hover {
   background: rgba(184, 72, 72, 0.32);
+}
+
+.about-modal {
+  width: min(860px, 100%);
+  max-height: min(760px, calc(100% - 12px));
+  padding: 16px;
+  gap: 16px;
+}
+
+.about-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.about-modal-version {
+  margin: 6px 0 0;
+  color: rgba(246, 237, 216, 0.65);
+  font-size: 0.82rem;
+}
+
+.about-modal-close {
+  border: 0;
+  border-radius: 999px;
+  min-height: 34px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f6edd8;
+}
+
+.about-modal-body {
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  justify-items: center;
+  gap: 20px;
+  padding-right: 4px;
+}
+
+.about-modal-section {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: center;
+}
+
+.about-modal-label {
+  color: #fff3e2;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.about-modal-image {
+  display: block;
+  width: min(100%, 320px);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+}
+
+.about-modal-fallback {
+  width: min(100%, 320px);
+  min-height: 320px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  box-sizing: border-box;
+  background:
+    linear-gradient(135deg, rgba(223, 172, 83, 0.22), rgba(255, 255, 255, 0.08)),
+    rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff3e2;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 780px) {
+  .about-modal {
+    width: min(420px, 100%);
+  }
+
+  .about-modal-body {
+    grid-template-columns: 1fr;
+  }
 }
 
 .tag {
