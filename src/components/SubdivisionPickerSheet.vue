@@ -160,6 +160,43 @@ const emit = defineEmits<{
   box-sizing: border-box;
   align-content: start;
   justify-items: stretch;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(223, 172, 83, 0.62) rgba(255, 255, 255, 0.05);
+}
+
+.sheet-options-grid::-webkit-scrollbar {
+  width: 10px;
+}
+
+.sheet-options-grid::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.05),
+    rgba(255, 255, 255, 0.02)
+  );
+}
+
+.sheet-options-grid::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(18, 15, 12, 0.92);
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    rgba(235, 189, 98, 0.9),
+    rgba(160, 109, 37, 0.92)
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 244, 220, 0.22),
+    0 0 0 1px rgba(255, 214, 133, 0.08);
+}
+
+.sheet-options-grid::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(
+    180deg,
+    rgba(247, 203, 119, 0.96),
+    rgba(184, 126, 44, 0.96)
+  );
 }
 
 .note-option {
