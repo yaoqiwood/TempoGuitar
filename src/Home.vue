@@ -16,16 +16,24 @@ import {
   type NoteSubdivisionId,
 } from "./types/subdivision";
 
-const bpm = ref(96);
+const DEFAULT_BPM = 96;
+const DEFAULT_TIME_SIGNATURE_ID: TimeSignatureId = "4/4";
+const DEFAULT_ACCENT_PATTERN = "强-弱-弱-弱";
+const DEFAULT_SUBDIVISION_ID: NoteSubdivisionId = subdivisionOptions[0].id;
+const DEFAULT_SOUND_PACK_ID: SoundPackId = soundPackOptions[0].id;
+const DEFAULT_METRONOME_VOLUME_PERCENT = 70;
+
+const bpm = ref(DEFAULT_BPM);
 const timeSignatureMenuOpen = ref(false);
 const soundMenuOpen = ref(false);
 const settingsMenuOpen = ref(false);
-const selectedSoundPackId = ref<SoundPackId>(soundPackOptions[0].id);
-const selectedTimeSignatureId = ref<TimeSignatureId>("4/4");
-const accentPattern = ref("强-弱-弱-弱");
+const resetConfirmOpen = ref(false);
+const selectedSoundPackId = ref<SoundPackId>(DEFAULT_SOUND_PACK_ID);
+const selectedTimeSignatureId = ref<TimeSignatureId>(DEFAULT_TIME_SIGNATURE_ID);
+const accentPattern = ref(DEFAULT_ACCENT_PATTERN);
 const subdivisionMenuOpen = ref(false);
-const selectedSubdivisionId = ref<NoteSubdivisionId>(subdivisionOptions[0].id);
-const metronomeVolumePercent = ref(70);
+const selectedSubdivisionId = ref<NoteSubdivisionId>(DEFAULT_SUBDIVISION_ID);
+const metronomeVolumePercent = ref(DEFAULT_METRONOME_VOLUME_PERCENT);
 const metronomeVolume = computed(() => metronomeVolumePercent.value / 100);
 const showSplash = ref(true);
 const saveCurrentStateStatus = ref<"idle" | "saved" | "error">("idle");
@@ -247,6 +255,30 @@ function saveCurrentMetronomeSettings() {
   }
 }
 
+function applyFactoryDefaults() {
+  bpm.value = DEFAULT_BPM;
+  selectedTimeSignatureId.value = DEFAULT_TIME_SIGNATURE_ID;
+  selectedSubdivisionId.value = DEFAULT_SUBDIVISION_ID;
+  selectedSoundPackId.value = DEFAULT_SOUND_PACK_ID;
+  accentPattern.value = DEFAULT_ACCENT_PATTERN;
+  metronomeVolumePercent.value = DEFAULT_METRONOME_VOLUME_PERCENT;
+}
+
+function resetMetronomeSettings() {
+  applyFactoryDefaults();
+  setSaveCurrentStateStatus("idle");
+
+  try {
+    window.localStorage.removeItem(SAVED_METRONOME_SETTINGS_KEY);
+  } catch {
+    // Ignore storage cleanup errors and still restore in-memory defaults.
+  }
+
+  if (!isPlaying.value) {
+    syncSubdivisionNow();
+  }
+}
+
 function restoreSavedMetronomeSettings() {
   const savedRaw = window.localStorage.getItem(SAVED_METRONOME_SETTINGS_KEY);
 
@@ -428,10 +460,28 @@ function selectSoundPack(optionId: SoundPackId) {
 
 function toggleSettingsMenu() {
   settingsMenuOpen.value = !settingsMenuOpen.value;
+
+  if (!settingsMenuOpen.value) {
+    resetConfirmOpen.value = false;
+  }
 }
 
 function closeSettingsMenu() {
   settingsMenuOpen.value = false;
+  resetConfirmOpen.value = false;
+}
+
+function openResetConfirm() {
+  resetConfirmOpen.value = true;
+}
+
+function closeResetConfirm() {
+  resetConfirmOpen.value = false;
+}
+
+function confirmResetMetronomeSettings() {
+  resetMetronomeSettings();
+  resetConfirmOpen.value = false;
 }
 
 onMounted(() => {
@@ -688,6 +738,57 @@ onBeforeUnmount(() => {
             step="1"
           />
         </div>
+
+        <div class="settings-actions">
+          <p class="settings-reset-hint">
+            恢复默认 BPM、拍号、音符、音色和音量，并清除已保存参数。
+          </p>
+          <button
+            type="button"
+            class="settings-reset-button"
+            @click="openResetConfirm"
+          >
+            恢复出厂设置
+          </button>
+        </div>
+
+        <Transition name="sheet-fade">
+          <div
+            v-if="resetConfirmOpen"
+            class="confirm-modal-overlay"
+            @click.self="closeResetConfirm"
+          >
+            <section
+              class="confirm-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="reset-confirm-title"
+            >
+              <h4 id="reset-confirm-title" class="confirm-modal-title">
+                确认恢复出厂设置？
+              </h4>
+              <p class="confirm-modal-copy">
+                这会恢复默认 BPM、拍号、音符、音色和音量，并清除已保存参数。
+              </p>
+              <div class="confirm-modal-actions">
+                <button
+                  type="button"
+                  class="confirm-modal-button confirm-modal-button-secondary"
+                  @click="closeResetConfirm"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  class="confirm-modal-button confirm-modal-button-danger"
+                  @click="confirmResetMetronomeSettings"
+                >
+                  确认恢复
+                </button>
+              </div>
+            </section>
+          </div>
+        </Transition>
       </section>
     </div>
   </Transition>
@@ -949,6 +1050,118 @@ onBeforeUnmount(() => {
 .settings-slider {
   width: 100%;
   accent-color: #dfac53;
+}
+
+.settings-actions {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.settings-reset-hint {
+  margin: 0;
+  color: rgba(246, 237, 216, 0.56);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.settings-reset-button {
+  border: 0;
+  border-radius: 12px;
+  min-height: 44px;
+  padding: 0 14px;
+  background: rgba(184, 72, 72, 0.2);
+  color: #ffd9d9;
+  font-weight: 600;
+  transition:
+    background-color 140ms ease,
+    transform 140ms ease;
+}
+
+.settings-reset-button:hover {
+  background: rgba(184, 72, 72, 0.3);
+  transform: translateY(-1px);
+}
+
+.confirm-modal-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  background: rgba(8, 7, 6, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.confirm-modal {
+  width: min(320px, 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(
+    180deg,
+    rgba(40, 30, 26, 0.98),
+    rgba(18, 14, 12, 0.99)
+  );
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.34);
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.confirm-modal-title {
+  margin: 0;
+  font-size: 1rem;
+  color: #fff3e2;
+}
+
+.confirm-modal-copy {
+  margin: 0;
+  color: rgba(246, 237, 216, 0.7);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.confirm-modal-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.confirm-modal-button {
+  border: 0;
+  border-radius: 12px;
+  min-height: 42px;
+  padding: 0 14px;
+  font-weight: 600;
+  transition:
+    background-color 140ms ease,
+    transform 140ms ease,
+    color 140ms ease;
+}
+
+.confirm-modal-button:hover {
+  transform: translateY(-1px);
+}
+
+.confirm-modal-button-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f6edd8;
+}
+
+.confirm-modal-button-secondary:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.confirm-modal-button-danger {
+  background: rgba(184, 72, 72, 0.22);
+  color: #ffd9d9;
+}
+
+.confirm-modal-button-danger:hover {
+  background: rgba(184, 72, 72, 0.32);
 }
 
 .tag {
