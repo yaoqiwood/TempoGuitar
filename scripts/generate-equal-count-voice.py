@@ -34,6 +34,9 @@ TOKEN_SPECS = [
     TokenSpec("two", "two", "+50%", "+18Hz"),
     TokenSpec("three", "three", "+96%", "+16Hz"),
     TokenSpec("four", "four", "+72%", "+16Hz"),
+    TokenSpec("e", "ee", "+82%", "+18Hz"),
+    TokenSpec("and", "an", "+64%", "+18Hz"),
+    TokenSpec("a", "uh", "+74%", "+16Hz"),
 ]
 
 
@@ -116,6 +119,8 @@ async def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     TMP_DIR.mkdir(parents=True, exist_ok=True)
     for stale_file in OUTPUT_DIR.glob("*.mp3"):
+        stale_file.unlink()
+    for stale_file in OUTPUT_DIR.glob("*.wav"):
         stale_file.unlink()
 
     report: list[dict[str, float | str | int]] = []

@@ -8,6 +8,9 @@ import voiceCountOneUrl from "../assets/count-voice/equal/one.wav";
 import voiceCountTwoUrl from "../assets/count-voice/equal/two.wav";
 import voiceCountThreeUrl from "../assets/count-voice/equal/three.wav";
 import voiceCountFourUrl from "../assets/count-voice/equal/four.wav";
+import voiceCountEUrl from "../assets/count-voice/equal/e.wav";
+import voiceCountAndUrl from "../assets/count-voice/equal/and.wav";
+import voiceCountAUrl from "../assets/count-voice/equal/a.wav";
 
 type PulseMeta = {
   beat: number;
@@ -49,18 +52,21 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
   let schedulerTimer: ReturnType<typeof setInterval> | undefined;
   let glowPulseTimer: ReturnType<typeof setTimeout> | undefined;
   let voiceCountBuffersPromise: Promise<void> | null = null;
-  const voiceCountBuffers = new Map<number, AudioBuffer>();
+  const voiceCountBuffers = new Map<string, AudioBuffer>();
 
   const lookahead = 25;
   const scheduleAheadTime = 0.1;
   const engineStartLeadTimeSeconds = 0.02;
   const metronomeLoudnessBoost = 1.58;
   const voiceCountLeadInSeconds = 0.012;
-  const voiceCountClipUrls = new Map<number, string>([
-    [1, voiceCountOneUrl],
-    [2, voiceCountTwoUrl],
-    [3, voiceCountThreeUrl],
-    [4, voiceCountFourUrl],
+  const voiceCountClipUrls = new Map<string, string>([
+    ["1", voiceCountOneUrl],
+    ["2", voiceCountTwoUrl],
+    ["3", voiceCountThreeUrl],
+    ["4", voiceCountFourUrl],
+    ["e", voiceCountEUrl],
+    ["and", voiceCountAndUrl],
+    ["a", voiceCountAUrl],
   ]);
 
   function getScheduleAheadTime() {
@@ -88,7 +94,55 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
   }
 
   function getVoiceCountBeatNumber(beat: number) {
-    return (beat % 4) + 1;
+    return ((beat % 4) + 1).toString();
+  }
+
+  function getVoiceCountClipKey(meta: PulseMeta) {
+    if (playbackSubdivisionId.value === "quarter" && meta.pulseInBeat === 0) {
+      return getVoiceCountBeatNumber(meta.beat);
+    }
+
+    if (playbackSubdivisionId.value === "eighth") {
+      if (meta.pulseInBeat === 0) {
+        return getVoiceCountBeatNumber(meta.beat);
+      }
+
+      if (meta.pulseInBeat === 1) {
+        return "and";
+      }
+    }
+
+    if (playbackSubdivisionId.value === "sixteenth") {
+      if (meta.pulseInBeat === 0) {
+        return getVoiceCountBeatNumber(meta.beat);
+      }
+
+      if (meta.pulseInBeat === 1) {
+        return "e";
+      }
+
+      if (meta.pulseInBeat === 2) {
+        return "and";
+      }
+
+      if (meta.pulseInBeat === 3) {
+        return "a";
+      }
+    }
+
+    return null;
+  }
+
+  function getVoiceCountClipGain(clipKey: string) {
+    if (clipKey === "and") {
+      return 0.8;
+    }
+
+    if (clipKey === "e" || clipKey === "a") {
+      return 0.76;
+    }
+
+    return 1;
   }
 
   async function ensureVoiceCountBuffersLoaded(context: AudioContext) {
@@ -98,11 +152,11 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
 
     if (!voiceCountBuffersPromise) {
       voiceCountBuffersPromise = Promise.all(
-        Array.from(voiceCountClipUrls.entries()).map(async ([beat, clipUrl]) => {
+        Array.from(voiceCountClipUrls.entries()).map(async ([clipKey, clipUrl]) => {
           const response = await fetch(clipUrl);
           const clipArrayBuffer = await response.arrayBuffer();
           const audioBuffer = await context.decodeAudioData(clipArrayBuffer);
-          voiceCountBuffers.set(beat, audioBuffer);
+          voiceCountBuffers.set(clipKey, audioBuffer);
         }),
       )
         .then(() => undefined)
@@ -273,12 +327,16 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
   }
 
   function playVoiceCount(meta: PulseMeta, time: number) {
-    if (playbackSubdivisionId.value !== "quarter" || !meta.isBeatStart || !audioContext) {
+    if (!audioContext) {
       return false;
     }
 
-    const clipBeatNumber = getVoiceCountBeatNumber(meta.beat);
-    const clipBuffer = voiceCountBuffers.get(clipBeatNumber);
+    const clipKey = getVoiceCountClipKey(meta);
+    if (!clipKey) {
+      return false;
+    }
+
+    const clipBuffer = voiceCountBuffers.get(clipKey);
 
     if (!clipBuffer) {
       return false;
@@ -288,7 +346,10 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
     const gainNode = audioContext.createGain();
 
     sourceNode.buffer = clipBuffer;
-    gainNode.gain.setValueAtTime(getMasterVolume(), time);
+    gainNode.gain.setValueAtTime(
+      getMasterVolume() * getVoiceCountClipGain(clipKey),
+      time,
+    );
 
     sourceNode.connect(gainNode);
     gainNode.connect(audioContext.destination);

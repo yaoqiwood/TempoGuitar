@@ -42,5 +42,38 @@
     "targetDurationSeconds": 0.2,
     "detectedOnsetSeconds": 0.1967,
     "finalWavDurationSeconds": 0.2
+  },
+  {
+    "key": "e",
+    "voice": "en-US-JennyNeural",
+    "text": "ee",
+    "rate": "+82%",
+    "pitch": "+18Hz",
+    "sampleRate": 24000,
+    "targetDurationSeconds": 0.2,
+    "detectedOnsetSeconds": 0.131,
+    "finalWavDurationSeconds": 0.2
+  },
+  {
+    "key": "and",
+    "voice": "en-US-JennyNeural",
+    "text": "an",
+    "rate": "+64%",
+    "pitch": "+18Hz",
+    "sampleRate": 24000,
+    "targetDurationSeconds": 0.2,
+    "detectedOnsetSeconds": 0.14,
+    "finalWavDurationSeconds": 0.2
+  },
+  {
+    "key": "a",
+    "voice": "en-US-JennyNeural",
+    "text": "uh",
+    "rate": "+74%",
+    "pitch": "+16Hz",
+    "sampleRate": 24000,
+    "targetDurationSeconds": 0.2,
+    "detectedOnsetSeconds": 0.1388,
+    "finalWavDurationSeconds": 0.2
   }
 ]
