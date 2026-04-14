@@ -47,6 +47,7 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
   const playbackSoundPackId = ref<SoundPackId>(selectedSoundPackId.value);
 
   let audioContext: AudioContext | null = null;
+  let masterOutputNode: DynamicsCompressorNode | null = null;
   let nextNoteTime = 0;
   let currentPulseIndex = 0;
   let schedulerTimer: ReturnType<typeof setInterval> | undefined;
@@ -74,19 +75,30 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
   }
 
   function getMasterVolume() {
-    return Math.min(1, Math.max(0, metronomeVolume.value));
+    return Math.min(2, Math.max(0, metronomeVolume.value));
   }
 
   function getScaledGain(baseGain: number, masterVolume: number) {
-    return Math.min(0.98, baseGain * masterVolume * metronomeLoudnessBoost);
+    return Math.min(1.92, baseGain * masterVolume * metronomeLoudnessBoost);
   }
 
   function ensureAudioContext() {
     if (!audioContext) {
       audioContext = new window.AudioContext();
+      masterOutputNode = audioContext.createDynamicsCompressor();
+      masterOutputNode.threshold.setValueAtTime(-14, audioContext.currentTime);
+      masterOutputNode.knee.setValueAtTime(10, audioContext.currentTime);
+      masterOutputNode.ratio.setValueAtTime(14, audioContext.currentTime);
+      masterOutputNode.attack.setValueAtTime(0.003, audioContext.currentTime);
+      masterOutputNode.release.setValueAtTime(0.16, audioContext.currentTime);
+      masterOutputNode.connect(audioContext.destination);
     }
 
     return audioContext;
+  }
+
+  function getOutputNode(context: AudioContext) {
+    return masterOutputNode ?? context.destination;
   }
 
   function isVoiceCountSoundPack(soundPackId: SoundPackId) {
@@ -108,6 +120,30 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
       }
 
       if (meta.pulseInBeat === 1) {
+        return "and";
+      }
+    }
+
+    if (playbackSubdivisionId.value === "eighth-triplet") {
+      if (meta.pulseInBeat === 0) {
+        return getVoiceCountBeatNumber(meta.beat);
+      }
+
+      if (meta.pulseInBeat === 1) {
+        return "e";
+      }
+
+      if (meta.pulseInBeat === 2) {
+        return "and";
+      }
+    }
+
+    if (playbackSubdivisionId.value === "eighth-triplet-rest") {
+      if (meta.pulseInBeat === 0) {
+        return getVoiceCountBeatNumber(meta.beat);
+      }
+
+      if (meta.pulseInBeat === 2) {
         return "and";
       }
     }
@@ -320,7 +356,7 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
     }
 
     oscillator.connect(gainNode);
-    gainNode.connect(context.destination);
+    gainNode.connect(getOutputNode(context));
 
     oscillator.start(time);
     oscillator.stop(time + 0.12);
@@ -352,7 +388,7 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
     );
 
     sourceNode.connect(gainNode);
-    gainNode.connect(audioContext.destination);
+    gainNode.connect(getOutputNode(audioContext));
 
     sourceNode.start(Math.max(audioContext.currentTime, time - voiceCountLeadInSeconds));
     return true;
@@ -484,6 +520,7 @@ export function useMetronomeEngine(options: UseMetronomeEngineOptions) {
     currentBeat,
     glowPulseActive,
     isPlaying,
+    stopMetronome,
     syncSubdivisionNow,
     togglePlayback,
     warmupAudioContext,

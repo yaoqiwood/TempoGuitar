@@ -40,7 +40,7 @@ export const soundPackOptions: SoundPackOption[] = [
   {
     id: "voice-count-female",
     label: "女声数拍",
-    subtitle: "播放 one two three four / e / and / a。当前支持 4 分、8 分、16 分音符。",
-    previewLine: "one e and a",
+    subtitle: "支持 4分、8分、三连音、三连音空1、16分音符的人声数拍。",
+    previewLine: "one e and / one x and / one e and a",
   },
 ];

@@ -22,6 +22,8 @@ const DEFAULT_ACCENT_PATTERN = "强-弱-弱-弱";
 const DEFAULT_SUBDIVISION_ID: NoteSubdivisionId = subdivisionOptions[0].id;
 const DEFAULT_SOUND_PACK_ID: SoundPackId = soundPackOptions[0].id;
 const DEFAULT_METRONOME_VOLUME_PERCENT = 70;
+const MAX_METRONOME_VOLUME_PERCENT = 100;
+const METRONOME_VOLUME_OUTPUT_MULTIPLIER = 2;
 
 const bpm = ref(DEFAULT_BPM);
 const timeSignatureMenuOpen = ref(false);
@@ -34,7 +36,9 @@ const accentPattern = ref(DEFAULT_ACCENT_PATTERN);
 const subdivisionMenuOpen = ref(false);
 const selectedSubdivisionId = ref<NoteSubdivisionId>(DEFAULT_SUBDIVISION_ID);
 const metronomeVolumePercent = ref(DEFAULT_METRONOME_VOLUME_PERCENT);
-const metronomeVolume = computed(() => metronomeVolumePercent.value / 100);
+const metronomeVolume = computed(
+  () => (metronomeVolumePercent.value / 100) * METRONOME_VOLUME_OUTPUT_MULTIPLIER,
+);
 const showSplash = ref(true);
 const saveCurrentStateStatus = ref<"idle" | "saved" | "error">("idle");
 
@@ -67,6 +71,7 @@ const {
   currentBeat,
   glowPulseActive,
   isPlaying,
+  stopMetronome,
   syncSubdivisionNow,
   togglePlayback,
   warmupAudioContext,
@@ -201,7 +206,7 @@ function clampBpm(value: number) {
 }
 
 function clampVolumePercent(value: number) {
-  return Math.min(100, Math.max(0, value));
+  return Math.min(MAX_METRONOME_VOLUME_PERCENT, Math.max(0, value));
 }
 
 function isTimeSignatureId(value: unknown): value is TimeSignatureId {
@@ -360,6 +365,10 @@ function onMeterFramePointerDown(event: PointerEvent) {
 
   if (!element) {
     return;
+  }
+
+  if (isPlaying.value) {
+    stopMetronome();
   }
 
   dragPointerId = event.pointerId;
@@ -734,7 +743,7 @@ onBeforeUnmount(() => {
             class="settings-slider"
             type="range"
             min="0"
-            max="100"
+            :max="MAX_METRONOME_VOLUME_PERCENT"
             step="1"
           />
         </div>
@@ -1450,6 +1459,28 @@ onBeforeUnmount(() => {
   opacity: 0.56;
   filter: blur(18px) saturate(124%);
   transform: scale(1.018);
+}
+
+.meter-focus-frame.is-strong-pulse {
+  transform: scale(1.012);
+  filter: saturate(116%) brightness(1.02);
+  box-shadow:
+    0 0 30px color-mix(in srgb, var(--glow-shadow) 56%, transparent),
+    0 0 54px color-mix(in srgb, var(--glow-primary) 24%, transparent),
+    0 0 88px color-mix(in srgb, var(--glow-accent) 14%, transparent);
+}
+
+.meter-focus-frame.is-strong-pulse::before {
+  opacity: 0.98;
+  filter: saturate(136%) brightness(1.08);
+  transform: scale(1.024);
+}
+
+.meter-focus-frame.is-strong-pulse::after {
+  inset: -18px;
+  opacity: 0.82;
+  filter: blur(28px) saturate(138%);
+  transform: scale(1.08);
 }
 
 .meter-focus-frame.is-dragging {
