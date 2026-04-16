@@ -23,14 +23,17 @@ const emit = defineEmits<{
   createArchive: [name: string];
   saveSelected: [];
   loadSelected: [];
+  deleteArchive: [id: string];
 }>();
 
 const selectMenuOpen = ref(false);
 const createDialogOpen = ref(false);
+const deleteConfirmOpen = ref(false);
 const newArchiveName = ref("");
 const newArchiveError = ref("");
 const selectRoot = ref<HTMLElement | null>(null);
 const newArchiveInput = ref<HTMLInputElement | null>(null);
+const archivePendingDeleteId = ref<string | null>(null);
 
 const selectedArchive = computed(
   () =>
@@ -80,6 +83,26 @@ function closeCreateDialog() {
   newArchiveError.value = "";
 }
 
+function openDeleteConfirm(id: string) {
+  archivePendingDeleteId.value = id;
+  deleteConfirmOpen.value = true;
+  closeSelectMenu();
+}
+
+function closeDeleteConfirm() {
+  deleteConfirmOpen.value = false;
+  archivePendingDeleteId.value = null;
+}
+
+function confirmDeleteArchive() {
+  if (!archivePendingDeleteId.value) {
+    return;
+  }
+
+  emit("deleteArchive", archivePendingDeleteId.value);
+  closeDeleteConfirm();
+}
+
 function submitNewArchive() {
   const nextName = newArchiveName.value.trim();
 
@@ -124,6 +147,7 @@ watch(
 
     closeSelectMenu();
     closeCreateDialog();
+    closeDeleteConfirm();
   },
 );
 
@@ -221,9 +245,19 @@ onBeforeUnmount(() => {
                     type="button"
                     @click="chooseArchive(archive.id)"
                   >
-                    <div class="archive-select-option-main">
-                      <strong>{{ archive.name }}</strong>
-                      <span>{{ archive.description }}</span>
+                    <div class="archive-select-option-row">
+                      <div class="archive-select-option-main">
+                        <strong>{{ archive.name }}</strong>
+                        <span>{{ archive.description }}</span>
+                      </div>
+                      <button
+                        class="archive-delete-button"
+                        type="button"
+                        aria-label="删除存档"
+                        @click.stop="openDeleteConfirm(archive.id)"
+                      >
+                        X
+                      </button>
                     </div>
                     <small>{{ archive.updatedAtText }}</small>
                   </button>
@@ -302,6 +336,35 @@ onBeforeUnmount(() => {
                     @click="submitNewArchive"
                   >
                     保存
+                  </button>
+                </div>
+              </section>
+            </div>
+          </Transition>
+
+          <Transition name="sheet-fade">
+            <div
+              v-if="deleteConfirmOpen"
+              class="archive-create-overlay"
+              @click.self="closeDeleteConfirm"
+            >
+              <section class="archive-create-dialog">
+                <h4>确认删除存档？</h4>
+                <p>删除后无法恢复，是否继续？</p>
+                <div class="archive-create-actions">
+                  <button
+                    class="archive-create-button archive-create-button-secondary"
+                    type="button"
+                    @click="closeDeleteConfirm"
+                  >
+                    否
+                  </button>
+                  <button
+                    class="archive-create-button archive-create-button-danger"
+                    type="button"
+                    @click="confirmDeleteArchive"
+                  >
+                    确认
                   </button>
                 </div>
               </section>
@@ -533,9 +596,38 @@ onBeforeUnmount(() => {
   background: rgba(223, 172, 83, 0.14);
 }
 
+.archive-select-option-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .archive-select-option-main {
   display: grid;
   gap: 3px;
+  min-width: 0;
+}
+
+.archive-delete-button {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(226, 84, 84, 0.16);
+  color: #ffd4d4;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+  transition:
+    background-color 140ms ease,
+    transform 140ms ease;
+}
+
+.archive-delete-button:hover {
+  background: rgba(226, 84, 84, 0.28);
+  transform: translateY(-1px);
 }
 
 .archive-selected-card {
@@ -601,6 +693,15 @@ onBeforeUnmount(() => {
 .archive-action-button-primary:hover,
 .archive-create-button-primary:hover {
   background: linear-gradient(135deg, #ebbb67, #c88939);
+}
+
+.archive-create-button-danger {
+  background: rgba(184, 72, 72, 0.22);
+  color: #ffd9d9;
+}
+
+.archive-create-button-danger:hover {
+  background: rgba(184, 72, 72, 0.32);
 }
 
 .archive-create-overlay {

@@ -635,6 +635,29 @@ function loadSelectedArchive() {
   }
 }
 
+function deleteArchive(archiveId: string) {
+  const nextArchives = savedArchives.value.filter(
+    (archive) => archive.id !== archiveId,
+  );
+
+  if (nextArchives.length === savedArchives.value.length) {
+    setArchiveActionStatus("error");
+    return;
+  }
+
+  const nextActiveArchiveId =
+    selectedArchiveId.value === archiveId
+      ? nextArchives[0]?.id ?? null
+      : selectedArchiveId.value;
+
+  try {
+    persistArchiveStore(nextArchives, nextActiveArchiveId);
+    setArchiveActionStatus("saved");
+  } catch {
+    setArchiveActionStatus("error");
+  }
+}
+
 function getPointerAngle(event: PointerEvent, element: HTMLElement) {
   const rect = element.getBoundingClientRect();
   const centerX = rect.left + rect.width / 2;
@@ -1229,6 +1252,7 @@ onBeforeUnmount(() => {
     @create-archive="createArchive"
     @save-selected="saveSelectedArchive"
     @load-selected="loadSelectedArchive"
+    @delete-archive="deleteArchive"
   />
 </template>
 
