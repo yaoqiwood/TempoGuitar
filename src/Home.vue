@@ -1,11 +1,18 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import ArchiveModal from "./components/ArchiveModal.vue";
 import NotationGlyph from "./components/NotationGlyph.vue";
 import SoundPickerSheet from "./components/SoundPickerSheet.vue";
 import SplashIntro from "./components/SplashIntro.vue";
 import SubdivisionPickerSheet from "./components/SubdivisionPickerSheet.vue";
 import TimeSignaturePickerSheet from "./components/TimeSignaturePickerSheet.vue";
 import { useMetronomeEngine } from "./composables/useMetronomeEngine";
+import {
+  type ArchiveActionStatus,
+  type MetronomeSettingsSnapshot,
+  type SavedMetronomeArchive,
+  type SavedMetronomeArchiveStore,
+} from "./types/archive";
 import { soundPackOptions, type SoundPackId } from "./types/sound-pack";
 import {
   timeSignatureOptions,
@@ -30,6 +37,7 @@ const soundMenuOpen = ref(false);
 const settingsMenuOpen = ref(false);
 const resetConfirmOpen = ref(false);
 const authorModalOpen = ref(false);
+const archiveModalOpen = ref(false);
 const authorWechatQrImageAvailable = ref(true);
 const donationWechatPayImageAvailable = ref(true);
 const selectedSoundPackId = ref<SoundPackId>(DEFAULT_SOUND_PACK_ID);
@@ -37,28 +45,28 @@ const selectedTimeSignatureId = ref<TimeSignatureId>(DEFAULT_TIME_SIGNATURE_ID);
 const subdivisionMenuOpen = ref(false);
 const selectedSubdivisionId = ref<NoteSubdivisionId>(DEFAULT_SUBDIVISION_ID);
 const metronomeVolumePercent = ref(DEFAULT_METRONOME_VOLUME_PERCENT);
+const savedArchives = ref<SavedMetronomeArchive[]>([]);
+const selectedArchiveId = ref<string | null>(null);
 const metronomeVolume = computed(
   () => (metronomeVolumePercent.value / 100) * METRONOME_VOLUME_OUTPUT_MULTIPLIER,
 );
 const showSplash = ref(true);
-const saveCurrentStateStatus = ref<"idle" | "saved" | "error">("idle");
+const archiveActionStatus = ref<ArchiveActionStatus>("idle");
 const authorWechatQrImageUrl = "/author-wechat-qr.jpg";
 const donationWechatPayImageUrl = "/donation-wechat-pay.jpg";
 
-const SAVED_METRONOME_SETTINGS_KEY =
+const LEGACY_SAVED_METRONOME_SETTINGS_KEY =
   "tempoguitar:saved-metronome-settings:v1";
+const SAVED_METRONOME_ARCHIVES_KEY =
+  "tempoguitar:saved-metronome-archives:v2";
 const timeSignatureIdSet = new Set(timeSignatureOptions.map((option) => option.id));
 const subdivisionIdSet = new Set(subdivisionOptions.map((option) => option.id));
 const soundPackIdSet = new Set(soundPackOptions.map((option) => option.id));
 
-type SavedMetronomeSettings = {
-  bpm: number;
-  timeSignatureId: TimeSignatureId;
-  subdivisionId: NoteSubdivisionId;
-  soundPackId: SoundPackId;
-  metronomeVolumePercent: number;
+type LegacySavedMetronomeSettings = MetronomeSettingsSnapshot & {
   savedAtIso: string;
 };
+
 const selectedTimeSignature = computed(
   () =>
     timeSignatureOptions.find(
@@ -183,7 +191,7 @@ const stageGlowStyle = computed(() => {
 });
 
 let splashHideTimer: ReturnType<typeof setTimeout> | undefined;
-let saveCurrentStateStatusTimer: ReturnType<typeof setTimeout> | undefined;
+let archiveActionStatusTimer: ReturnType<typeof setTimeout> | undefined;
 const minBpm = 40;
 const maxBpm = 240;
 const bpmPerFullTurn = 80;
@@ -191,17 +199,20 @@ const isBpmDragging = ref(false);
 const isBpmDragReady = ref(false);
 const bpmProgress = computed(() => (bpm.value - minBpm) / (maxBpm - minBpm));
 const bpmDialAngle = computed(() => -90 + bpmProgress.value * 360);
-const saveCurrentStateLabel = computed(() => {
-  if (saveCurrentStateStatus.value === "saved") {
-    return "已保存";
-  }
-
-  if (saveCurrentStateStatus.value === "error") {
-    return "保存失败";
-  }
-
-  return "保存当前";
-});
+const currentMetronomeSummary = computed(
+  () =>
+    `${bpm.value} BPM · ${timeSignatureDisplay.value} · ${subdivisionDisplay.value} · ${soundPackDisplay.value} · 音量 ${metronomeVolumePercent.value}%`,
+);
+const archiveSummaryOptions = computed(() =>
+  savedArchives.value.map((archive) => ({
+    id: archive.id,
+    name: archive.name,
+    description: `${archive.bpm} BPM · ${archive.timeSignatureId} · ${getSubdivisionLabel(
+      archive.subdivisionId,
+    )} · ${getSoundPackLabel(archive.soundPackId)}`,
+    updatedAtText: `更新于 ${formatArchiveTimestamp(archive.updatedAtIso)}`,
+  })),
+);
 
 let dragPointerId: number | null = null;
 let dragLastAngle = 0;
@@ -227,42 +238,337 @@ function isSoundPackId(value: unknown): value is SoundPackId {
   return typeof value === "string" && soundPackIdSet.has(value as SoundPackId);
 }
 
-function setSaveCurrentStateStatus(nextStatus: "idle" | "saved" | "error") {
-  saveCurrentStateStatus.value = nextStatus;
+function buildCurrentMetronomeSnapshot(): MetronomeSettingsSnapshot {
+  return {
+    bpm: bpm.value,
+    timeSignatureId: selectedTimeSignatureId.value,
+    subdivisionId: selectedSubdivisionId.value,
+    soundPackId: selectedSoundPackId.value,
+    metronomeVolumePercent: metronomeVolumePercent.value,
+  };
+}
 
-  if (saveCurrentStateStatusTimer) {
-    clearTimeout(saveCurrentStateStatusTimer);
-    saveCurrentStateStatusTimer = undefined;
+function sanitizeMetronomeSnapshot(
+  candidate: Partial<MetronomeSettingsSnapshot>,
+): MetronomeSettingsSnapshot {
+  return {
+    bpm:
+      typeof candidate.bpm === "number" && Number.isFinite(candidate.bpm)
+        ? clampBpm(Math.round(candidate.bpm))
+        : DEFAULT_BPM,
+    timeSignatureId: isTimeSignatureId(candidate.timeSignatureId)
+      ? candidate.timeSignatureId
+      : DEFAULT_TIME_SIGNATURE_ID,
+    subdivisionId: isSubdivisionId(candidate.subdivisionId)
+      ? candidate.subdivisionId
+      : DEFAULT_SUBDIVISION_ID,
+    soundPackId: isSoundPackId(candidate.soundPackId)
+      ? candidate.soundPackId
+      : DEFAULT_SOUND_PACK_ID,
+    metronomeVolumePercent:
+      typeof candidate.metronomeVolumePercent === "number" &&
+      Number.isFinite(candidate.metronomeVolumePercent)
+        ? clampVolumePercent(Math.round(candidate.metronomeVolumePercent))
+        : DEFAULT_METRONOME_VOLUME_PERCENT,
+  };
+}
+
+function applyMetronomeSnapshot(candidate: Partial<MetronomeSettingsSnapshot>) {
+  const snapshot = sanitizeMetronomeSnapshot(candidate);
+
+  bpm.value = snapshot.bpm;
+  selectedTimeSignatureId.value = snapshot.timeSignatureId;
+  selectedSubdivisionId.value = snapshot.subdivisionId;
+  selectedSoundPackId.value = snapshot.soundPackId;
+  metronomeVolumePercent.value = snapshot.metronomeVolumePercent;
+
+  if (!isPlaying.value) {
+    syncSubdivisionNow();
+  }
+}
+
+function normalizeIsoString(value: unknown, fallbackIso = new Date().toISOString()) {
+  if (typeof value !== "string") {
+    return fallbackIso;
+  }
+
+  const timestamp = Date.parse(value);
+
+  if (Number.isNaN(timestamp)) {
+    return fallbackIso;
+  }
+
+  return new Date(timestamp).toISOString();
+}
+
+function createArchiveId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `archive-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function sortArchives(archives: SavedMetronomeArchive[]) {
+  return [...archives].sort(
+    (left, right) =>
+      Date.parse(right.updatedAtIso) - Date.parse(left.updatedAtIso),
+  );
+}
+
+function sanitizeArchive(candidate: unknown): SavedMetronomeArchive | null {
+  if (!candidate || typeof candidate !== "object") {
+    return null;
+  }
+
+  const parsed = candidate as Partial<SavedMetronomeArchive>;
+  const name = typeof parsed.name === "string" ? parsed.name.trim() : "";
+
+  if (!name) {
+    return null;
+  }
+
+  const createdAtIso = normalizeIsoString(parsed.createdAtIso);
+  const updatedAtIso = normalizeIsoString(parsed.updatedAtIso, createdAtIso);
+
+  return {
+    id:
+      typeof parsed.id === "string" && parsed.id.trim()
+        ? parsed.id.trim()
+        : createArchiveId(),
+    name,
+    createdAtIso,
+    updatedAtIso,
+    ...sanitizeMetronomeSnapshot(parsed),
+  };
+}
+
+function writeArchiveStore(store: SavedMetronomeArchiveStore) {
+  window.localStorage.setItem(
+    SAVED_METRONOME_ARCHIVES_KEY,
+    JSON.stringify(store),
+  );
+}
+
+function persistArchiveStore(
+  archives: SavedMetronomeArchive[],
+  activeArchiveId: string | null,
+) {
+  const nextArchives = sortArchives(archives);
+  const nextActiveArchiveId =
+    activeArchiveId && nextArchives.some((archive) => archive.id === activeArchiveId)
+      ? activeArchiveId
+      : nextArchives[0]?.id ?? null;
+  const nextStore: SavedMetronomeArchiveStore = {
+    activeArchiveId: nextActiveArchiveId,
+    archives: nextArchives,
+  };
+
+  writeArchiveStore(nextStore);
+  savedArchives.value = nextArchives;
+  selectedArchiveId.value = nextActiveArchiveId;
+}
+
+function loadSavedArchiveStore(): SavedMetronomeArchiveStore {
+  const archivedRaw = window.localStorage.getItem(SAVED_METRONOME_ARCHIVES_KEY);
+
+  if (archivedRaw) {
+    try {
+      const parsed = JSON.parse(archivedRaw) as Partial<SavedMetronomeArchiveStore>;
+      const archives = Array.isArray(parsed.archives)
+        ? parsed.archives
+            .map((archive) => sanitizeArchive(archive))
+            .filter((archive): archive is SavedMetronomeArchive => archive !== null)
+        : [];
+      const activeArchiveId =
+        typeof parsed.activeArchiveId === "string" && parsed.activeArchiveId.trim()
+          ? parsed.activeArchiveId
+          : null;
+
+      return {
+        activeArchiveId:
+          activeArchiveId && archives.some((archive) => archive.id === activeArchiveId)
+            ? activeArchiveId
+            : archives[0]?.id ?? null,
+        archives: sortArchives(archives),
+      };
+    } catch {
+      window.localStorage.removeItem(SAVED_METRONOME_ARCHIVES_KEY);
+    }
+  }
+
+  const legacyRaw = window.localStorage.getItem(LEGACY_SAVED_METRONOME_SETTINGS_KEY);
+
+  if (!legacyRaw) {
+    return {
+      activeArchiveId: null,
+      archives: [],
+    };
+  }
+
+  try {
+    const legacyParsed = JSON.parse(
+      legacyRaw,
+    ) as Partial<LegacySavedMetronomeSettings>;
+    const savedAtIso = normalizeIsoString(legacyParsed.savedAtIso);
+    const migratedArchive: SavedMetronomeArchive = {
+      id: createArchiveId(),
+      name: "历史存档",
+      createdAtIso: savedAtIso,
+      updatedAtIso: savedAtIso,
+      ...sanitizeMetronomeSnapshot(legacyParsed),
+    };
+    const migratedStore: SavedMetronomeArchiveStore = {
+      activeArchiveId: migratedArchive.id,
+      archives: [migratedArchive],
+    };
+
+    writeArchiveStore(migratedStore);
+    window.localStorage.removeItem(LEGACY_SAVED_METRONOME_SETTINGS_KEY);
+
+    return migratedStore;
+  } catch {
+    window.localStorage.removeItem(LEGACY_SAVED_METRONOME_SETTINGS_KEY);
+
+    return {
+      activeArchiveId: null,
+      archives: [],
+    };
+  }
+}
+
+function formatArchiveTimestamp(iso: string) {
+  const date = new Date(iso);
+
+  if (Number.isNaN(date.getTime())) {
+    return "未知时间";
+  }
+
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  const hours = `${date.getHours()}`.padStart(2, "0");
+  const minutes = `${date.getMinutes()}`.padStart(2, "0");
+
+  return `${year}/${month}/${day} ${hours}:${minutes}`;
+}
+
+function getSubdivisionLabel(id: NoteSubdivisionId) {
+  return (
+    subdivisionOptions.find((option) => option.id === id)?.label ??
+    subdivisionOptions[0].label
+  );
+}
+
+function getSoundPackLabel(id: SoundPackId) {
+  return (
+    soundPackOptions.find((option) => option.id === id)?.label ??
+    soundPackOptions[0].label
+  );
+}
+
+function findSelectedArchive() {
+  if (!selectedArchiveId.value) {
+    return null;
+  }
+
+  return (
+    savedArchives.value.find((archive) => archive.id === selectedArchiveId.value) ??
+    null
+  );
+}
+
+function setArchiveActionStatus(nextStatus: ArchiveActionStatus) {
+  archiveActionStatus.value = nextStatus;
+
+  if (archiveActionStatusTimer) {
+    clearTimeout(archiveActionStatusTimer);
+    archiveActionStatusTimer = undefined;
   }
 
   if (nextStatus === "idle") {
     return;
   }
 
-  saveCurrentStateStatusTimer = window.setTimeout(() => {
-    saveCurrentStateStatus.value = "idle";
-    saveCurrentStateStatusTimer = undefined;
-  }, 1800);
+  archiveActionStatusTimer = window.setTimeout(() => {
+    archiveActionStatus.value = "idle";
+    archiveActionStatusTimer = undefined;
+  }, 2200);
 }
 
-function saveCurrentMetronomeSettings() {
-  try {
-    const payload: SavedMetronomeSettings = {
-      bpm: bpm.value,
-      timeSignatureId: selectedTimeSignatureId.value,
-      subdivisionId: selectedSubdivisionId.value,
-      soundPackId: selectedSoundPackId.value,
-      metronomeVolumePercent: metronomeVolumePercent.value,
-      savedAtIso: new Date().toISOString(),
-    };
+function openArchiveModal() {
+  if (!selectedArchiveId.value && savedArchives.value.length) {
+    selectedArchiveId.value = savedArchives.value[0].id;
+  }
 
-    window.localStorage.setItem(
-      SAVED_METRONOME_SETTINGS_KEY,
-      JSON.stringify(payload),
-    );
-    setSaveCurrentStateStatus("saved");
+  closeSettingsMenu();
+  archiveModalOpen.value = true;
+}
+
+function closeArchiveModal() {
+  archiveModalOpen.value = false;
+  setArchiveActionStatus("idle");
+}
+
+function selectArchive(id: string) {
+  selectedArchiveId.value = id;
+}
+
+function createArchive(name: string) {
+  const normalizedName = name.trim();
+  const normalizedLookupName = normalizedName.toLocaleLowerCase();
+
+  if (
+    !normalizedName ||
+    savedArchives.value.some(
+      (archive) => archive.name.toLocaleLowerCase() === normalizedLookupName,
+    )
+  ) {
+    setArchiveActionStatus("error");
+    return;
+  }
+
+  const timestamp = new Date().toISOString();
+  const nextArchive: SavedMetronomeArchive = {
+    id: createArchiveId(),
+    name: normalizedName,
+    createdAtIso: timestamp,
+    updatedAtIso: timestamp,
+    ...buildCurrentMetronomeSnapshot(),
+  };
+
+  try {
+    persistArchiveStore([nextArchive, ...savedArchives.value], nextArchive.id);
+    setArchiveActionStatus("saved");
   } catch {
-    setSaveCurrentStateStatus("error");
+    setArchiveActionStatus("error");
+  }
+}
+
+function saveSelectedArchive() {
+  const selectedArchive = findSelectedArchive();
+
+  if (!selectedArchive) {
+    setArchiveActionStatus("error");
+    return;
+  }
+
+  const updatedArchive: SavedMetronomeArchive = {
+    ...selectedArchive,
+    updatedAtIso: new Date().toISOString(),
+    ...buildCurrentMetronomeSnapshot(),
+  };
+
+  try {
+    persistArchiveStore(
+      savedArchives.value.map((archive) =>
+        archive.id === updatedArchive.id ? updatedArchive : archive,
+      ),
+      updatedArchive.id,
+    );
+    setArchiveActionStatus("saved");
+  } catch {
+    setArchiveActionStatus("error");
   }
 }
 
@@ -276,10 +582,14 @@ function applyFactoryDefaults() {
 
 function resetMetronomeSettings() {
   applyFactoryDefaults();
-  setSaveCurrentStateStatus("idle");
+  savedArchives.value = [];
+  selectedArchiveId.value = null;
+  setArchiveActionStatus("idle");
+  archiveModalOpen.value = false;
 
   try {
-    window.localStorage.removeItem(SAVED_METRONOME_SETTINGS_KEY);
+    window.localStorage.removeItem(SAVED_METRONOME_ARCHIVES_KEY);
+    window.localStorage.removeItem(LEGACY_SAVED_METRONOME_SETTINGS_KEY);
   } catch {
     // Ignore storage cleanup errors and still restore in-memory defaults.
   }
@@ -290,41 +600,38 @@ function resetMetronomeSettings() {
 }
 
 function restoreSavedMetronomeSettings() {
-  const savedRaw = window.localStorage.getItem(SAVED_METRONOME_SETTINGS_KEY);
+  const savedStore = loadSavedArchiveStore();
 
-  if (!savedRaw) {
+  savedArchives.value = savedStore.archives;
+  selectedArchiveId.value = savedStore.activeArchiveId;
+
+  const archiveToRestore =
+    savedStore.archives.find(
+      (archive) => archive.id === savedStore.activeArchiveId,
+    ) ?? savedStore.archives[0];
+
+  if (!archiveToRestore) {
     return;
   }
 
+  applyMetronomeSnapshot(archiveToRestore);
+}
+
+function loadSelectedArchive() {
+  const selectedArchive = findSelectedArchive();
+
+  if (!selectedArchive) {
+    setArchiveActionStatus("error");
+    return;
+  }
+
+  applyMetronomeSnapshot(selectedArchive);
+
   try {
-    const parsed: Partial<SavedMetronomeSettings> = JSON.parse(savedRaw);
-
-    if (typeof parsed.bpm === "number" && Number.isFinite(parsed.bpm)) {
-      bpm.value = clampBpm(Math.round(parsed.bpm));
-    }
-
-    if (isTimeSignatureId(parsed.timeSignatureId)) {
-      selectedTimeSignatureId.value = parsed.timeSignatureId;
-    }
-
-    if (isSubdivisionId(parsed.subdivisionId)) {
-      selectedSubdivisionId.value = parsed.subdivisionId;
-    }
-
-    if (isSoundPackId(parsed.soundPackId)) {
-      selectedSoundPackId.value = parsed.soundPackId;
-    }
-
-    if (
-      typeof parsed.metronomeVolumePercent === "number" &&
-      Number.isFinite(parsed.metronomeVolumePercent)
-    ) {
-      metronomeVolumePercent.value = clampVolumePercent(
-        Math.round(parsed.metronomeVolumePercent),
-      );
-    }
+    persistArchiveStore(savedArchives.value, selectedArchive.id);
+    setArchiveActionStatus("loaded");
   } catch {
-    window.localStorage.removeItem(SAVED_METRONOME_SETTINGS_KEY);
+    setArchiveActionStatus("error");
   }
 }
 
@@ -534,8 +841,8 @@ onBeforeUnmount(() => {
     clearTimeout(splashHideTimer);
   }
 
-  if (saveCurrentStateStatusTimer) {
-    clearTimeout(saveCurrentStateStatusTimer);
+  if (archiveActionStatusTimer) {
+    clearTimeout(archiveActionStatusTimer);
   }
 });
 </script>
@@ -560,18 +867,12 @@ onBeforeUnmount(() => {
             </span>
             <div class="top-action-group">
               <button
-                :class="[
-                  'quick-save-button',
-                  {
-                    'is-saved': saveCurrentStateStatus === 'saved',
-                    'is-error': saveCurrentStateStatus === 'error',
-                  },
-                ]"
+                :class="['quick-save-button', { 'is-active': archiveModalOpen }]"
                 type="button"
-                aria-label="保存当前节拍器参数"
-                @click="saveCurrentMetronomeSettings"
+                aria-label="打开存档面板"
+                @click="openArchiveModal"
               >
-                {{ saveCurrentStateLabel }}
+                存档
               </button>
               <button
                 class="settings-gear"
@@ -774,7 +1075,7 @@ onBeforeUnmount(() => {
 
         <div class="settings-actions">
           <p class="settings-reset-hint">
-            恢复默认 BPM、拍号、音符、音色和音量，并清除已保存参数。
+            恢复默认 BPM、拍号、音符、音色和音量，并清除所有已保存存档。
           </p>
           <button
             type="button"
@@ -808,7 +1109,7 @@ onBeforeUnmount(() => {
                 确认恢复出厂设置？
               </h4>
               <p class="confirm-modal-copy">
-                这会恢复默认 BPM、拍号、音符、音色和音量，并清除已保存参数。
+                这会恢复默认 BPM、拍号、音符、音色和音量，并清除所有已保存存档。
               </p>
               <div class="confirm-modal-actions">
                 <button
@@ -915,6 +1216,19 @@ onBeforeUnmount(() => {
     :options="soundPackOptions"
     @close="closeSoundMenu"
     @select="selectSoundPack"
+  />
+
+  <ArchiveModal
+    :open="archiveModalOpen"
+    :archives="archiveSummaryOptions"
+    :selected-archive-id="selectedArchiveId"
+    :status="archiveActionStatus"
+    :current-snapshot-text="currentMetronomeSummary"
+    @close="closeArchiveModal"
+    @select-archive="selectArchive"
+    @create-archive="createArchive"
+    @save-selected="saveSelectedArchive"
+    @load-selected="loadSelectedArchive"
   />
 </template>
 
@@ -1042,14 +1356,9 @@ onBeforeUnmount(() => {
   transform: translateY(-1px);
 }
 
-.quick-save-button.is-saved {
-  background: rgba(83, 197, 123, 0.22);
-  color: #ccffd9;
-}
-
-.quick-save-button.is-error {
-  background: rgba(226, 84, 84, 0.24);
-  color: #ffd4d4;
+.quick-save-button.is-active {
+  background: rgba(223, 172, 83, 0.22);
+  color: #fff0ca;
 }
 
 .settings-gear {
